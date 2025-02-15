@@ -1,23 +1,23 @@
-package ui
+package slack
 
 import (
 	"fmt"
 
-	"github.com/gabrieltorresdev/batedor-automatico-ponto/src/slack"
+	"github.com/gabrieltorresdev/batedor-automatico-ponto/internal/common"
 	"github.com/manifoldco/promptui"
 )
 
 const (
 	// Mensagens do Slack - Entrada
-	MensagemBomDia = "Bom dia"
-	MensagemVoltei = "Voltei"
+	mensagemBomDia = "Bom dia"
+	mensagemVoltei = "Voltei"
 
 	// Mensagens do Slack - Saída
-	MensagemSaindo  = "Saindo"
-	MensagemJaVolto = "Já volto"
+	mensagemSaindo  = "Saindo"
+	mensagemJaVolto = "Já volto"
 
 	// Mensagens do Slack - Almoço
-	MensagemAlmoco = "Almoço"
+	mensagemAlmoco = "Almoço"
 
 	// Mensagens de erro
 	errConfigSlack       = "erro na configuração do Slack"
@@ -27,8 +27,8 @@ const (
 
 // Cache de prompts pré-configurados
 var (
-	mensagensEntrada = []string{MensagemBomDia, MensagemVoltei}
-	mensagensSaida   = []string{MensagemSaindo, MensagemJaVolto}
+	mensagensEntrada = []string{mensagemBomDia, mensagemVoltei}
+	mensagensSaida   = []string{mensagemSaindo, mensagemJaVolto}
 
 	promptEntrada = &promptui.Select{
 		Label: "Selecione a mensagem",
@@ -63,16 +63,17 @@ func selecionarMensagemSaida() (string, error) {
 	return resultado, nil
 }
 
-func ExibirPromptSlack(configDir string, slackSession *slack.SlackSession) error {
-	// Verifica se já existe uma sessão salva
-	if err := slackSession.LoadCookies(configDir); err == nil {
-		loading := NewLoadingSpinner("Verificando configuração do Slack")
-		loading.Start()
-		if err := slackSession.ValidateSession(); err == nil {
-			loading.Success()
+// ConfigurarSlack configura a sessão do Slack, incluindo autenticação se necessário
+func (s *SlackSession) ConfigurarSlack(configDir string, spinner common.LoadingSpinner) error {
+	// Tenta carregar cookies existentes
+	if err := s.LoadCookies(configDir); err == nil {
+		spinner.Update("Verificando configuração do Slack")
+		spinner.Start()
+		if err := s.validateSessionOnly(); err == nil {
+			spinner.Success()
 			return nil
 		} else {
-			loading.Error(err)
+			spinner.Error(err)
 			fmt.Println("Sessão do Slack expirada, necessário fazer login novamente")
 		}
 	}
@@ -80,23 +81,24 @@ func ExibirPromptSlack(configDir string, slackSession *slack.SlackSession) error
 	fmt.Println("\nIniciando configuração do Slack")
 
 	// Inicia o processo de autenticação
-	if err := slackSession.Authenticate(); err != nil {
+	if err := s.Authenticate(); err != nil {
 		return fmt.Errorf("%s: %w", errConfigSlack, err)
 	}
 
 	// Salva os cookies após autenticação bem-sucedida
-	loading := NewLoadingSpinner("Salvando configuração do Slack")
-	loading.Start()
-	if err := slackSession.SaveCookies(configDir); err != nil {
-		loading.Error(err)
+	spinner.Update("Salvando configuração do Slack")
+	spinner.Start()
+	if err := s.SaveCookies(configDir); err != nil {
+		spinner.Error(err)
 		return fmt.Errorf("erro ao salvar cookies do Slack: %w", err)
 	}
-	loading.Success()
+	spinner.Success()
 
 	return nil
 }
 
-func ExibirPromptEnviarMensagem(slackSession *slack.SlackSession, tipoMensagem string) (bool, string, error) {
+// PrepararMensagem prepara a mensagem a ser enviada com base no tipo
+func (s *SlackSession) PrepararMensagem(tipoMensagem string) (bool, string, error) {
 	var mensagem string
 	var err error
 
@@ -104,7 +106,7 @@ func ExibirPromptEnviarMensagem(slackSession *slack.SlackSession, tipoMensagem s
 	case "entrada":
 		mensagem, err = selecionarMensagemEntrada()
 	case "refeicao":
-		mensagem = MensagemAlmoco
+		mensagem = mensagemAlmoco
 	case "saida":
 		mensagem, err = selecionarMensagemSaida()
 	default:

@@ -6,6 +6,7 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/fatih/color"
+	"github.com/gabrieltorresdev/batedor-automatico-ponto/internal/common"
 )
 
 const (
@@ -18,13 +19,14 @@ var (
 	errorColor   = color.New(color.FgRed).SprintFunc()
 )
 
+// LoadingSpinner implements the common.LoadingSpinner interface
 type LoadingSpinner struct {
 	spinner *spinner.Spinner
 	message string
 }
 
-// NewLoadingSpinner cria um novo spinner com a mensagem especificada
-func NewLoadingSpinner(message string) *LoadingSpinner {
+// NewLoadingSpinner creates a new loading spinner with the specified message
+func NewLoadingSpinner(message string) common.LoadingSpinner {
 	s := spinner.New(spinner.CharSets[spinnerCharset], spinnerSpeed)
 	s.Suffix = fmt.Sprintf(" %s", message)
 	return &LoadingSpinner{
@@ -33,29 +35,29 @@ func NewLoadingSpinner(message string) *LoadingSpinner {
 	}
 }
 
-// Start inicia a animação do spinner
+// Start starts the spinner animation
 func (l *LoadingSpinner) Start() {
 	l.spinner.Start()
 }
 
-// Stop para a animação do spinner
+// Stop stops the spinner animation
 func (l *LoadingSpinner) Stop() {
 	l.spinner.Stop()
 }
 
-// Success para o spinner e exibe mensagem de sucesso
+// Success stops the spinner and shows a success message
 func (l *LoadingSpinner) Success() {
 	l.Stop()
 	fmt.Printf("%s %s\n", successColor("✓"), l.message)
 }
 
-// Error para o spinner e exibe mensagem de erro
+// Error stops the spinner and shows an error message
 func (l *LoadingSpinner) Error(err error) {
 	l.Stop()
 	fmt.Printf("%s %s: %v\n", errorColor("✗"), l.message, err)
 }
 
-// Update atualiza a mensagem do spinner
+// Update updates the spinner message
 func (l *LoadingSpinner) Update(message string) {
 	l.message = message
 	l.spinner.Suffix = fmt.Sprintf(" %s", message)

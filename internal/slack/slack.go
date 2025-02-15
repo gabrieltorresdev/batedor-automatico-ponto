@@ -15,7 +15,7 @@ import (
 
 const (
 	slackBaseURL     = "https://fintools-ot.slack.com"
-	slackDMURL       = "https://app.slack.com/client/TSAD5P1GB/C010LNL7KS9"
+	slackDMURL       = "https://app.slack.com/client/TSAD5P1GB/D045LMRNAJC"
 	slackRedirectURL = "https://fintools-ot.slack.com/ssb/redirect"
 
 	slackOperationTimeout = 30 * time.Second
@@ -127,7 +127,7 @@ func createBrowserContext(headless bool) (context.Context, context.CancelFunc, e
 
 func NewSlackSession(parentCtx context.Context) *SlackSession {
 	// Usa o contexto pai para criar o contexto do browser
-	ctx, cancel, err := createBrowserContext(true)
+	ctx, cancel, err := createBrowserContext(false)
 	if err != nil {
 		fmt.Printf("\n⚠️  Erro ao criar sessão: %v\n", err)
 		return nil
@@ -245,8 +245,8 @@ func (s *SlackSession) validateSessionOnly() error {
 		return nil
 	}
 
-	// Se não estiver, tenta navegar para a URL base
-	return s.retry(func() error {
+	// Se não estiver, tenta navegar para a URL base e valida novamente
+	if err := s.retry(func() error {
 		if err := chromedp.Run(ctx, chromedp.Navigate(slackBaseURL)); err != nil {
 			return fmt.Errorf("erro ao navegar: %w", err)
 		}
@@ -256,7 +256,12 @@ func (s *SlackSession) validateSessionOnly() error {
 		}
 
 		return nil
-	})
+	}); err != nil {
+		// Se falhou, precisa autenticar
+		return s.Authenticate()
+	}
+
+	return nil
 }
 
 func (s *SlackSession) navigateToDM() error {
@@ -291,9 +296,6 @@ func (s *SlackSession) Authenticate() error {
 	if err := s.waitForLogin(ctx); err != nil {
 		return fmt.Errorf("erro no login: %w", err)
 	}
-
-	// Aguarda um pouco após o login para garantir que os cookies foram salvos
-	time.Sleep(2 * time.Second)
 
 	return nil
 }
@@ -334,13 +336,6 @@ func (s *SlackSession) SendMessage(msg string) error {
 
 	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancel()
-
-	// Verifica se a sessão está válida sem navegar
-	if !s.isValidSession(ctx) {
-		if err := s.Authenticate(); err != nil {
-			return fmt.Errorf("erro na autenticação: %w", err)
-		}
-	}
 
 	// Navega para DM apenas se necessário
 	if err := s.navigateToDM(); err != nil {

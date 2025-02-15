@@ -486,3 +486,12 @@ func (g *GerenciadorPonto) ObterOperacoesDisponiveis() ([]TipoOperacao, error) {
 func (g *GerenciadorPonto) ExecutarOperacao(operacao TipoOperacao) error {
 	return g.executarOperacao(operacao)
 }
+
+// Close releases resources used by the module
+func (g *GerenciadorPonto) Close() {
+	if g.ctx != nil {
+		if cancel, ok := g.ctx.Value("cancel").(context.CancelFunc); ok {
+			cancel()
+		}
+	}
+}

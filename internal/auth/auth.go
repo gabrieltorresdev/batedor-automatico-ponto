@@ -64,11 +64,12 @@ type AuthSession struct {
 	cancel context.CancelFunc
 }
 
-func NewAuthSession() BrowserSession {
+// NewAuthSession creates a new authentication session
+func NewAuthSession(headless bool) BrowserSession {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
+		chromedp.Flag("headless", headless),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-setuid-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
