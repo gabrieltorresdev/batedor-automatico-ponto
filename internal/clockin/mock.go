@@ -32,8 +32,6 @@ func NewMockPonto(ctx context.Context) Module {
 
 // ObterLocalizacaoAtual returns the current mock location
 func (m *MockPonto) ObterLocalizacaoAtual() (string, error) {
-	// Simula delay de rede
-	time.Sleep(200 * time.Millisecond)
 
 	// Simula erro aleatório (5% de chance)
 	if rand.Float32() < 0.05 {
@@ -49,9 +47,6 @@ func (m *MockPonto) ObterLocalizacaoAtual() (string, error) {
 
 // ObterLocalizacoesDisponiveis returns mock available locations
 func (m *MockPonto) ObterLocalizacoesDisponiveis() ([]Localizacao, error) {
-	// Simula delay de rede
-	time.Sleep(500 * time.Millisecond)
-
 	// Simula erro aleatório (5% de chance)
 	if rand.Float32() < 0.05 {
 		return nil, &ErroPonto{
@@ -66,9 +61,6 @@ func (m *MockPonto) ObterLocalizacoesDisponiveis() ([]Localizacao, error) {
 
 // SelecionarLocalizacao updates the mock current location
 func (m *MockPonto) SelecionarLocalizacao(localizacao Localizacao) error {
-	// Simula delay de rede
-	time.Sleep(300 * time.Millisecond)
-
 	// Simula erro aleatório (5% de chance)
 	if rand.Float32() < 0.05 {
 		return &ErroPonto{
@@ -99,9 +91,6 @@ func (m *MockPonto) SelecionarLocalizacao(localizacao Localizacao) error {
 
 // ObterOperacoesDisponiveis returns mock available operations
 func (m *MockPonto) ObterOperacoesDisponiveis() ([]TipoOperacao, error) {
-	// Simula delay de rede
-	time.Sleep(200 * time.Millisecond)
-
 	// Simula erro aleatório (5% de chance)
 	if rand.Float32() < 0.05 {
 		return nil, &ErroPonto{
@@ -116,9 +105,6 @@ func (m *MockPonto) ObterOperacoesDisponiveis() ([]TipoOperacao, error) {
 
 // ExecutarOperacao simulates executing a clock-in operation
 func (m *MockPonto) ExecutarOperacao(operacao TipoOperacao) error {
-	// Simula delay de rede
-	time.Sleep(1 * time.Second)
-
 	// Simula erro aleatório (5% de chance)
 	if rand.Float32() < 0.05 {
 		return &ErroPonto{

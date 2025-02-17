@@ -46,7 +46,7 @@ func main() {
 	loading.Start()
 	authModule, err := auth.NewModule(auth.Config{
 		Headless: true,
-		UseMock:  mocarPonto, // Usa a mesma configuração de mock
+		UseMock:  mocarPonto,
 	})
 	if err != nil {
 		loading.Error(err)
@@ -69,19 +69,21 @@ func main() {
 	loading = uiModule.ShowSpinner("Inicializando módulo de ponto")
 	loading.Start()
 	pontoModule := clockin.NewModule(authModule.GetContext(), clockin.Config{
-		UseMock: mocarPonto, // Usa a mesma configuração de mock
+		UseMock: mocarPonto,
 	})
 	loading.Success()
 
 	// Tenta inicializar o módulo do Slack
 	loading = uiModule.ShowSpinner("Configurando Slack")
 	loading.Start()
-	slackModule, err := slack.NewModule(ctx, slack.Config{
-		ConfigDir: os.Getenv("HOME") + "/.batedorponto",
+	slackModule, err := slack.NewModulo(ctx, slack.Configuracao{
+		DiretorioConfig: os.Getenv("HOME") + "/.batedorponto",
+		ModoSilencioso:  true,
 	})
 	if err != nil {
 		loading.Error(err)
-		fmt.Println("Aviso: Slack não configurado:", err)
+		fmt.Printf("\n⚠️  Aviso: Funcionalidades do Slack não estarão disponíveis: %v\n", err)
+		slackModule = nil
 	} else {
 		loading.Success()
 	}
@@ -102,19 +104,19 @@ func main() {
 
 	// Loop principal com seleção de operação
 	for {
-		opcao, err := ui.ExibirMenuPrincipal()
+		opcao, err := ui.ExibirMenuPrincipal(slackModule != nil)
 		if err != nil {
 			fmt.Println("Erro no menu:", err)
 			continue
 		}
 
-		if opcao == "Sair" {
+		if opcao == ui.OpSair {
 			fmt.Println("\nEncerrando...")
 			break
 		}
 
 		// Se o usuário optar por marcar ponto
-		marcarPonto := opcao == "Marcar ponto" || opcao == "Marcar ponto e enviar mensagem"
+		marcarPonto := opcao == ui.OpSomentePonto || opcao == ui.OpPontoCompletoSlack
 		if marcarPonto {
 			// Gerencia localização
 			if _, err := gerenciarLocalizacao(pontoModule, uiModule); err != nil {
@@ -159,26 +161,157 @@ func main() {
 				continue
 			}
 			loading.Success()
+
+			// Atualiza o status do Slack se necessário
+			if opcao == ui.OpPontoCompletoSlack {
+				// Obtém o status atual primeiro
+				loading = uiModule.ShowSpinner("Obtendo status atual")
+				loading.Start()
+				statusAtual, err := slackModule.ObterStatusAtual()
+				if err != nil {
+					loading.Error(err)
+					fmt.Println("Erro ao obter status atual:", err)
+					continue
+				}
+				loading.Success()
+
+				localizacaoAtual, err := pontoModule.ObterLocalizacaoAtual()
+				if err != nil {
+					fmt.Println("Erro ao obter localização atual:", err)
+					continue
+				}
+
+				novoStatus := slack.DeterminarStatus(operacao, localizacaoAtual)
+				confirmado, err := slack.ConfirmarAlteracaoStatus(statusAtual, novoStatus)
+				if err != nil {
+					fmt.Println("Erro na confirmação do status:", err)
+					continue
+				}
+
+				if confirmado {
+					loading = uiModule.ShowSpinner("Atualizando status no Slack")
+					loading.Start()
+					if err := slackModule.DefinirStatus(novoStatus); err != nil {
+						loading.Error(err)
+						fmt.Println("Erro ao atualizar status:", err)
+						continue
+					}
+					loading.Success()
+				}
+
+				// Prepara e envia mensagem
+				tipoMensagem := determinarTipoMensagem(operacoes)
+				enviar, mensagem, err := slackModule.PrepararMensagem(tipoMensagem)
+				if err != nil {
+					fmt.Println("Erro ao preparar mensagem:", err)
+					continue
+				}
+
+				if !enviar {
+					fmt.Println("\n✖ Envio cancelado")
+					continue
+				}
+
+				loading = uiModule.ShowSpinner("Enviando mensagem no Slack")
+				loading.Start()
+				if err := slackModule.EnviarMensagem(mensagem); err != nil {
+					loading.Error(err)
+					fmt.Println("Erro ao enviar mensagem:", err)
+					continue
+				}
+				loading.Success()
+			}
 		}
 
-		// Se o usuário optar por enviar mensagem e o Slack estiver configurado
-		enviarMensagem := (opcao == "Enviar mensagem no Slack" || opcao == "Marcar ponto e enviar mensagem") && slackModule != nil
-		if enviarMensagem {
-			var tipoMensagem string
-			if marcarPonto {
-				operacoes, err := pontoModule.ObterOperacoesDisponiveis()
+		// Se o usuário optar por gerenciar status do Slack
+		if opcao == ui.OpStatusSlack {
+			// Obtém o status atual
+			loading = uiModule.ShowSpinner("Obtendo status atual")
+			loading.Start()
+			statusAtual, err := slackModule.ObterStatusAtual()
+			if err != nil {
+				loading.Error(err)
+				fmt.Println("Erro ao obter status:", err)
+				continue
+			}
+			loading.Success()
+
+			// Exibe o status atual
+			slack.ExibirStatusAtual(statusAtual)
+
+			// Pergunta se deseja limpar ou alterar
+			prompt := promptui.Select{
+				Label: "O que deseja fazer",
+				Items: []string{
+					"Alterar status",
+					"Limpar status",
+					"Voltar",
+				},
+			}
+
+			_, acao, err := prompt.Run()
+			if err != nil {
+				fmt.Println("Erro na seleção:", err)
+				continue
+			}
+
+			switch acao {
+			case "Alterar status":
+				novoStatus, err := slack.SelecionarStatus(statusAtual)
 				if err != nil {
-					fmt.Println("Erro ao determinar tipo de mensagem:", err)
+					fmt.Println("Erro ao selecionar status:", err)
 					continue
 				}
-				tipoMensagem = determinarTipoMensagem(operacoes)
-			} else {
-				var err error
-				tipoMensagem, err = selecionarTipoMensagem()
+
+				confirmado, err := slack.ConfirmarAlteracaoStatus(statusAtual, novoStatus)
 				if err != nil {
-					fmt.Println("Erro ao selecionar tipo de mensagem:", err)
+					fmt.Println("Erro na confirmação:", err)
 					continue
 				}
+
+				if !confirmado {
+					fmt.Println("\n✖ Alteração cancelada")
+					continue
+				}
+
+				loading = uiModule.ShowSpinner("Atualizando status")
+				loading.Start()
+				if err := slackModule.DefinirStatus(novoStatus); err != nil {
+					loading.Error(err)
+					fmt.Println("Erro ao atualizar status:", err)
+					continue
+				}
+				loading.Success()
+
+			case "Limpar status":
+				confirmado, err := slack.ConfirmarLimpezaStatus(statusAtual)
+				if err != nil {
+					fmt.Println("Erro na confirmação:", err)
+					continue
+				}
+
+				if !confirmado {
+					fmt.Println("\n✖ Operação cancelada")
+					continue
+				}
+
+				loading = uiModule.ShowSpinner("Limpando status")
+				loading.Start()
+				if err := slackModule.LimparStatus(); err != nil {
+					loading.Error(err)
+					fmt.Println("Erro ao limpar status:", err)
+					continue
+				}
+				loading.Success()
+			}
+		}
+
+		// Se o usuário optar por enviar mensagem no Slack
+		if opcao == ui.OpMensagemSlack {
+			tipoMensagem, err := selecionarTipoMensagem()
+			if err != nil {
+				fmt.Println("Erro ao selecionar tipo de mensagem:", err)
+				continue
 			}
 
 			enviar, mensagem, err := slackModule.PrepararMensagem(tipoMensagem)
@@ -194,7 +327,7 @@ func main() {
 
 			loading = uiModule.ShowSpinner("Enviando mensagem no Slack")
 			loading.Start()
-			if err := slackModule.SendMessage(mensagem); err != nil {
+			if err := slackModule.EnviarMensagem(mensagem); err != nil {
 				loading.Error(err)
 				fmt.Println("Erro ao enviar mensagem:", err)
 				continue

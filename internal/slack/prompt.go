@@ -64,12 +64,12 @@ func selecionarMensagemSaida() (string, error) {
 }
 
 // ConfigurarSlack configura a sessão do Slack, incluindo autenticação se necessário
-func (s *SlackSession) ConfigurarSlack(configDir string, spinner common.LoadingSpinner) error {
+func (s *SessaoSlack) ConfigurarSlack(configDir string, spinner common.LoadingSpinner) error {
 	// Tenta carregar cookies existentes
-	if err := s.LoadCookies(configDir); err == nil {
+	if err := s.CarregarCookies(configDir); err == nil {
 		spinner.Update("Verificando configuração do Slack")
 		spinner.Start()
-		if err := s.validateSessionOnly(); err == nil {
+		if err := s.ValidarSessao(); err == nil {
 			spinner.Success()
 			return nil
 		} else {
@@ -81,14 +81,14 @@ func (s *SlackSession) ConfigurarSlack(configDir string, spinner common.LoadingS
 	fmt.Println("\nIniciando configuração do Slack")
 
 	// Inicia o processo de autenticação
-	if err := s.Authenticate(); err != nil {
+	if err := s.Autenticar(); err != nil {
 		return fmt.Errorf("%s: %w", errConfigSlack, err)
 	}
 
 	// Salva os cookies após autenticação bem-sucedida
 	spinner.Update("Salvando configuração do Slack")
 	spinner.Start()
-	if err := s.SaveCookies(configDir); err != nil {
+	if err := s.SalvarCookies(configDir); err != nil {
 		spinner.Error(err)
 		return fmt.Errorf("erro ao salvar cookies do Slack: %w", err)
 	}
@@ -97,32 +97,34 @@ func (s *SlackSession) ConfigurarSlack(configDir string, spinner common.LoadingS
 	return nil
 }
 
-// PrepararMensagem prepara a mensagem a ser enviada com base no tipo
-func (s *SlackSession) PrepararMensagem(tipoMensagem string) (bool, string, error) {
+// PrepararMensagem prepara uma mensagem baseada no tipo
+func (s *SessaoSlack) PrepararMensagem(tipoMensagem string) (bool, string, error) {
 	var mensagem string
-	var err error
 
 	switch tipoMensagem {
 	case "entrada":
-		mensagem, err = selecionarMensagemEntrada()
+		mensagem = "Bom dia! Iniciando expediente. 🌅"
 	case "refeicao":
-		mensagem = mensagemAlmoco
+		mensagem = "Saindo para almoço! 🍽️"
 	case "saida":
-		mensagem, err = selecionarMensagemSaida()
+		mensagem = "Encerrando expediente. Até amanhã! 👋"
 	default:
 		return false, "", fmt.Errorf("tipo de mensagem inválido: %s", tipoMensagem)
 	}
 
-	if err != nil {
-		return false, "", fmt.Errorf("erro na seleção da mensagem: %w", err)
+	// Confirma o envio da mensagem
+	prompt := promptui.Prompt{
+		Label:     fmt.Sprintf("Enviar mensagem: %s", mensagem),
+		IsConfirm: true,
+		Default:   "n",
 	}
 
-	resultado, err := promptConfirmacao.Run()
+	resultado, err := prompt.Run()
 	if err != nil {
 		if err == promptui.ErrAbort {
 			return false, "", nil
 		}
-		return false, "", fmt.Errorf("%s: %w", errEnvioMensagem, err)
+		return false, "", fmt.Errorf("erro na confirmação: %w", err)
 	}
 
 	return resultado == "y" || resultado == "Y", mensagem, nil

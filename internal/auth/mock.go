@@ -37,9 +37,6 @@ func (m *MockSession) Login(creds Credentials) error {
 		return ErrInvalidCredentials
 	}
 
-	// Simula um delay para parecer mais realista
-	time.Sleep(1 * time.Second)
-
 	// Simula erro de timeout aleatoriamente (10% de chance)
 	if time.Now().UnixNano()%10 == 0 {
 		return &LoginError{

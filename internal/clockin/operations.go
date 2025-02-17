@@ -453,7 +453,6 @@ func (g *GerenciadorPonto) tratarModalIntervalo() error {
 
 	err = chromedp.Run(g.ctx,
 		chromedp.Click(seletor, chromedp.ByQuery),
-		chromedp.Sleep(500*time.Millisecond),
 	)
 
 	if err != nil {
