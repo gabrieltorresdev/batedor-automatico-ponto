@@ -9,15 +9,15 @@ import (
 
 const (
 	// Mensagens do Slack - Entrada
-	mensagemBomDia = "Bom dia"
-	mensagemVoltei = "Voltei"
+	mensagemBomDia = "bom dia"
+	mensagemVoltei = "voltei"
 
 	// Mensagens do Slack - Saída
-	mensagemSaindo  = "Saindo"
-	mensagemJaVolto = "Já volto"
+	mensagemSaindo  = "saindo"
+	mensagemJaVolto = "já volto"
 
 	// Mensagens do Slack - Almoço
-	mensagemAlmoco = "Almoço"
+	mensagemAlmoco = "almoço"
 
 	// Mensagens de erro
 	errConfigSlack       = "erro na configuração do Slack"
@@ -39,13 +39,47 @@ var (
 		Label: "Selecione a mensagem",
 		Items: mensagensSaida,
 	}
+)
 
-	promptConfirmacao = &promptui.Prompt{
-		Label:     "Confirma",
+// PrepararMensagem prepara uma mensagem baseada no tipo
+func (s *SessaoSlack) PrepararMensagem(tipoMensagem string) (bool, string, error) {
+	var (
+		mensagem string
+		err      error
+	)
+
+	switch tipoMensagem {
+	case "entrada":
+		mensagem, err = selecionarMensagemEntrada()
+	case "refeicao":
+		mensagem = mensagemAlmoco
+	case "saida":
+		mensagem, err = selecionarMensagemSaida()
+	default:
+		return false, "", fmt.Errorf("tipo de mensagem inválido: %s", tipoMensagem)
+	}
+
+	if err != nil {
+		return false, "", err
+	}
+
+	// Confirma o envio da mensagem
+	prompt := promptui.Prompt{
+		Label:     fmt.Sprintf("Enviar mensagem: %s", mensagem),
 		IsConfirm: true,
 		Default:   "n",
 	}
-)
+
+	resultado, err := prompt.Run()
+	if err != nil {
+		if err == promptui.ErrAbort {
+			return false, "", nil
+		}
+		return false, "", fmt.Errorf("erro na confirmação: %w", err)
+	}
+
+	return resultado == "y" || resultado == "Y", mensagem, nil
+}
 
 func selecionarMensagemEntrada() (string, error) {
 	_, resultado, err := promptEntrada.Run()
@@ -95,37 +129,4 @@ func (s *SessaoSlack) ConfigurarSlack(configDir string, spinner common.LoadingSp
 	spinner.Success()
 
 	return nil
-}
-
-// PrepararMensagem prepara uma mensagem baseada no tipo
-func (s *SessaoSlack) PrepararMensagem(tipoMensagem string) (bool, string, error) {
-	var mensagem string
-
-	switch tipoMensagem {
-	case "entrada":
-		mensagem = "Bom dia! Iniciando expediente. 🌅"
-	case "refeicao":
-		mensagem = "Saindo para almoço! 🍽️"
-	case "saida":
-		mensagem = "Encerrando expediente. Até amanhã! 👋"
-	default:
-		return false, "", fmt.Errorf("tipo de mensagem inválido: %s", tipoMensagem)
-	}
-
-	// Confirma o envio da mensagem
-	prompt := promptui.Prompt{
-		Label:     fmt.Sprintf("Enviar mensagem: %s", mensagem),
-		IsConfirm: true,
-		Default:   "n",
-	}
-
-	resultado, err := prompt.Run()
-	if err != nil {
-		if err == promptui.ErrAbort {
-			return false, "", nil
-		}
-		return false, "", fmt.Errorf("erro na confirmação: %w", err)
-	}
-
-	return resultado == "y" || resultado == "Y", mensagem, nil
 }

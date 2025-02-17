@@ -28,7 +28,7 @@ func main() {
 	uiModule := ui.NewModule()
 
 	// Define se usará mock para desenvolvimento
-	const mocarPonto = true // Altere para false para usar o sistema real
+	const mocarPonto = false // Altere para false para usar o sistema real
 
 	// Carrega credenciais
 	loading := uiModule.ShowSpinner("Carregando credenciais")
@@ -387,6 +387,10 @@ func selecionarTipoMensagem() (string, error) {
 
 // Função auxiliar para gerenciar localização
 func gerenciarLocalizacao(pontoModule clockin.Module, uiModule ui.Module) (bool, error) {
+	// Primeiro verifica se há operações disponíveis
+	operacoes, _ := pontoModule.ObterOperacoesDisponiveis()
+	forcarSelecao := len(operacoes) == 0
+
 	localizacaoAtual, err := pontoModule.ObterLocalizacaoAtual()
 	if err != nil {
 		return false, fmt.Errorf("erro obtendo localização atual: %w", err)
@@ -394,23 +398,27 @@ func gerenciarLocalizacao(pontoModule clockin.Module, uiModule ui.Module) (bool,
 
 	fmt.Printf("\nLocalização atual: %s\n", localizacaoAtual)
 
-	prompt := promptui.Prompt{
-		Label:     "Deseja alterar a localização",
-		IsConfirm: true,
-	}
+	if forcarSelecao {
+		fmt.Println("⚠️  É necessário selecionar uma localização para habilitar as operações")
+	} else {
+		prompt := promptui.Prompt{
+			Label:     "Deseja alterar a localização",
+			IsConfirm: true,
+		}
 
-	resultado, err := prompt.Run()
-	if err != nil {
-		if err == promptui.ErrAbort {
+		resultado, err := prompt.Run()
+		if err != nil {
+			if err == promptui.ErrAbort {
+				fmt.Printf("\nMantendo localização: %s\n", localizacaoAtual)
+				return false, nil
+			}
+			return false, fmt.Errorf("erro na confirmação: %w", err)
+		}
+
+		if resultado != "y" && resultado != "Y" {
 			fmt.Printf("\nMantendo localização: %s\n", localizacaoAtual)
 			return false, nil
 		}
-		return false, fmt.Errorf("erro na confirmação: %w", err)
-	}
-
-	if resultado != "y" && resultado != "Y" {
-		fmt.Printf("\nMantendo localização: %s\n", localizacaoAtual)
-		return false, nil
 	}
 
 	loading := uiModule.ShowSpinner("Buscando localizações disponíveis")
@@ -431,7 +439,7 @@ func gerenciarLocalizacao(pontoModule clockin.Module, uiModule ui.Module) (bool,
 		return false, fmt.Errorf("erro na seleção de localização: %w", err)
 	}
 
-	if localizacaoSelecionada.Nome == localizacaoAtual {
+	if !forcarSelecao && localizacaoSelecionada.Nome == localizacaoAtual {
 		fmt.Printf("\nMantendo localização: %s\n", localizacaoAtual)
 		return false, nil
 	}
@@ -441,6 +449,17 @@ func gerenciarLocalizacao(pontoModule clockin.Module, uiModule ui.Module) (bool,
 	if err := pontoModule.SelecionarLocalizacao(localizacaoSelecionada); err != nil {
 		loading.Error(err)
 		return false, fmt.Errorf("erro ao selecionar localização: %w", err)
+	}
+	loading.Success()
+
+	// Aguarda um momento e verifica se as operações estão disponíveis
+	loading = uiModule.ShowSpinner("Aguardando operações serem habilitadas")
+	loading.Start()
+	time.Sleep(2 * time.Second) // Aguarda 2 segundos para a interface atualizar
+	operacoes, err = pontoModule.ObterOperacoesDisponiveis()
+	if err != nil || len(operacoes) == 0 {
+		loading.Error(fmt.Errorf("operações não foram habilitadas após selecionar localização"))
+		return false, fmt.Errorf("operações não disponíveis após selecionar localização")
 	}
 	loading.Success()
 
