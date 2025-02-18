@@ -14,6 +14,9 @@ const (
 	envFileName   = ".env"
 )
 
+// ErrCredenciaisNaoEncontradas indica que as credenciais não foram encontradas e precisam ser inseridas
+var ErrCredenciaisNaoEncontradas = fmt.Errorf("credenciais não encontradas")
+
 // CarregarCredenciais loads credentials from environment or prompts the user
 func CarregarCredenciais() (Credentials, error) {
 	configDir := filepath.Join(os.Getenv("HOME"), configDirName)
@@ -34,6 +37,11 @@ func CarregarCredenciais() (Credentials, error) {
 		}
 	}
 
+	return Credentials{}, ErrCredenciaisNaoEncontradas
+}
+
+// SolicitarCredenciais solicita as credenciais do usuário
+func SolicitarCredenciais() (Credentials, error) {
 	fmt.Println("\nPor favor, insira suas credenciais:")
 
 	// Prompt para usuário
@@ -78,6 +86,11 @@ func CarregarCredenciais() (Credentials, error) {
 		return Credentials{}, err
 	}
 
+	return creds, nil
+}
+
+// SalvarCredenciais salva as credenciais em arquivo
+func SalvarCredenciais(creds Credentials) error {
 	// Pergunta se deseja salvar
 	confirmPrompt := promptui.Prompt{
 		Label:     "Deseja salvar as credenciais? (Recomendado)",
@@ -86,16 +99,29 @@ func CarregarCredenciais() (Credentials, error) {
 	}
 
 	resultado, err := confirmPrompt.Run()
-	if err == nil && (resultado == "y" || resultado == "Y") {
-		envContent := fmt.Sprintf("USERNAME_PONTO=%s\nPASSWORD_PONTO=%s\n", username, password)
-		if err := os.WriteFile(envFile, []byte(envContent), 0600); err != nil {
-			fmt.Printf("\n⚠️  Aviso: não foi possível salvar as credenciais: %v\n", err)
-		} else {
-			fmt.Println("\nCredenciais salvas com sucesso")
+	if err != nil {
+		if err == promptui.ErrAbort {
+			fmt.Println("\nCredenciais não serão salvas. Você precisará inseri-las novamente na próxima execução.")
+			return nil
 		}
+		return fmt.Errorf("erro na confirmação: %w", err)
+	}
+
+	if resultado == "y" || resultado == "Y" {
+		configDir := filepath.Join(os.Getenv("HOME"), configDirName)
+		if err := os.MkdirAll(configDir, 0700); err != nil {
+			return fmt.Errorf("erro ao criar diretório de configuração: %w", err)
+		}
+
+		envContent := fmt.Sprintf("USERNAME_PONTO=%s\nPASSWORD_PONTO=%s\n", creds.Username, creds.Password)
+		envFile := filepath.Join(configDir, envFileName)
+		if err := os.WriteFile(envFile, []byte(envContent), 0600); err != nil {
+			return fmt.Errorf("erro ao salvar credenciais: %w", err)
+		}
+		fmt.Println("\nCredenciais salvas com sucesso")
 	} else {
 		fmt.Println("\nCredenciais não serão salvas. Você precisará inseri-las novamente na próxima execução.")
 	}
 
-	return creds, nil
+	return nil
 }

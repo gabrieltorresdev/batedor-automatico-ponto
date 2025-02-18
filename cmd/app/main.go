@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -34,12 +35,24 @@ func main() {
 	loading := uiModule.ShowSpinner("Carregando credenciais")
 	loading.Start()
 	creds, err := auth.CarregarCredenciais()
+	credenciaisNaoSalvas := false
 	if err != nil {
-		loading.Error(err)
-		fmt.Println("Erro ao carregar credenciais:", err)
-		os.Exit(1)
+		if err == auth.ErrCredenciaisNaoEncontradas {
+			loading.Stop() // Para o spinner antes de solicitar as credenciais
+			credenciaisNaoSalvas = true
+			creds, err = auth.SolicitarCredenciais()
+			if err != nil {
+				fmt.Println("Erro ao obter credenciais:", err)
+				os.Exit(1)
+			}
+		} else {
+			loading.Error(err)
+			fmt.Println("Erro ao carregar credenciais:", err)
+			os.Exit(1)
+		}
+	} else {
+		loading.Success()
 	}
-	loading.Success()
 
 	// Inicializa o módulo de autenticação
 	loading = uiModule.ShowSpinner("Inicializando autenticação")
@@ -55,15 +68,39 @@ func main() {
 	}
 	loading.Success()
 
-	// Faz login
-	loading = uiModule.ShowSpinner("Realizando login")
-	loading.Start()
-	if err := authModule.Login(creds); err != nil {
-		loading.Error(err)
-		fmt.Println("Erro ao fazer login:", err)
-		os.Exit(1)
+	// Loop de tentativas de login
+	var loginSucesso bool
+	for !loginSucesso {
+		// Faz login
+		loading = uiModule.ShowSpinner("Realizando login")
+		loading.Start()
+		err = authModule.Login(creds)
+		if err != nil {
+			loading.Error(err)
+			var loginErr *auth.LoginError
+			if errors.As(err, &loginErr) && loginErr.Type == "auth" {
+				fmt.Println("\nPor favor, tente novamente.")
+				creds, err = auth.SolicitarCredenciais()
+				if err != nil {
+					fmt.Println("Erro ao obter credenciais:", err)
+					os.Exit(1)
+				}
+				credenciaisNaoSalvas = true
+				continue
+			}
+			fmt.Println("Erro ao fazer login:", err)
+			os.Exit(1)
+		}
+		loading.Success()
+		loginSucesso = true
 	}
-	loading.Success()
+
+	// Se as credenciais não estavam salvas e o login foi bem sucedido, oferece salvar
+	if credenciaisNaoSalvas {
+		if err := auth.SalvarCredenciais(creds); err != nil {
+			fmt.Printf("\n⚠️  Aviso: não foi possível salvar as credenciais: %v\n", err)
+		}
+	}
 
 	// Inicializa o módulo de ponto
 	loading = uiModule.ShowSpinner("Inicializando módulo de ponto")
