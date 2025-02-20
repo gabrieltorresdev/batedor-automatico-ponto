@@ -20,9 +20,8 @@ func NewMockPonto(ctx context.Context) Module {
 	mock := &MockPonto{
 		ctx: ctx,
 		localizacoes: []Localizacao{
-			{Nome: "Home Office", Valor: "1"},
-			{Nome: "Escritório RJ", Valor: "2"},
-			{Nome: "Escritório SP", Valor: "3"},
+			{Nome: "HOME OFFICE", Valor: "1"},
+			{Nome: "ESCRITÓRIO", Valor: "2"},
 		},
 	}
 	mock.localizacaoAtual = mock.localizacoes[0].Nome

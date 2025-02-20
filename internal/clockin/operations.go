@@ -39,13 +39,13 @@ func (e *ErroPonto) Error() string {
 func (op TipoOperacao) String() string {
 	switch op {
 	case Entrada:
-		return "Entrada"
+		return "entrada"
 	case Almoco:
-		return "Saída refeição/descanso"
+		return "almoco"
 	case Saida:
-		return "Saída"
+		return "saida"
 	default:
-		return "Desconhecido"
+		return "desconhecido"
 	}
 }
 

@@ -31,9 +31,9 @@ var (
 
 const (
 	baseURL             = "https://oliveiratrust.softtrade.com.br"
-	defaultTimeout      = 2 * time.Minute
-	browserWindowWidth  = 1280
-	browserWindowHeight = 720
+	defaultTimeout      = 15 * time.Minute
+	browserWindowWidth  = 200
+	browserWindowHeight = 200
 )
 
 type loginStep struct {

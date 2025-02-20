@@ -68,7 +68,6 @@ type Configuracao struct {
 
 // NewModulo cria uma nova instância do módulo Slack
 func NewModulo(ctx context.Context, config Configuracao) (OperacoesSlack, error) {
-	// Primeiro tenta com modo silencioso
 	ops, err := NovoGerenciadorOperacoes(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao criar operações do slack: %w", err)
@@ -78,20 +77,8 @@ func NewModulo(ctx context.Context, config Configuracao) (OperacoesSlack, error)
 	if err := ops.CarregarCookies(config.DiretorioConfig); err != nil {
 		fmt.Printf("\n⚠️  Aviso: Cookies do Slack não encontrados ou inválidos. Iniciando autenticação interativa...\n")
 
-		// Fecha a sessão silenciosa atual
-		ops.Close()
-
-		// Cria uma nova sessão em modo não-silencioso para autenticação interativa
-		ops, err = NovoGerenciadorOperacoes(ctx, Configuracao{
-			DiretorioConfig: config.DiretorioConfig,
-			ModoSilencioso:  false, // Força modo não-silencioso para autenticação interativa
-		})
-		if err != nil {
-			return nil, fmt.Errorf("falha ao criar sessão interativa do slack: %w", err)
-		}
-
 		// Tenta autenticar interativamente
-		if err := ops.sessao.Autenticar(); err != nil {
+		if err := ops.Autenticar(); err != nil {
 			ops.Close()
 			return nil, fmt.Errorf("falha na autenticação interativa do Slack: %w", err)
 		}
@@ -105,18 +92,6 @@ func NewModulo(ctx context.Context, config Configuracao) (OperacoesSlack, error)
 		// Salva os cookies após autenticação bem-sucedida
 		if err := ops.SalvarCookies(config.DiretorioConfig); err != nil {
 			fmt.Printf("\n⚠️  Aviso: Não foi possível salvar os cookies do Slack: %v\n", err)
-		}
-
-		// Cria uma nova sessão silenciosa com os cookies salvos
-		ops.Close()
-		ops, err = NovoGerenciadorOperacoes(ctx, config)
-		if err != nil {
-			return nil, fmt.Errorf("falha ao criar sessão final do slack: %w", err)
-		}
-
-		if err := ops.CarregarCookies(config.DiretorioConfig); err != nil {
-			ops.Close()
-			return nil, fmt.Errorf("falha ao carregar cookies após autenticação: %w", err)
 		}
 	}
 

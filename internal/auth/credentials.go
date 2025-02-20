@@ -91,6 +91,21 @@ func SolicitarCredenciais() (Credentials, error) {
 
 // SalvarCredenciais salva as credenciais em arquivo
 func SalvarCredenciais(creds Credentials) error {
+	configDir := filepath.Join(os.Getenv("HOME"), configDirName)
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		return fmt.Errorf("erro ao criar diretório de configuração: %w", err)
+	}
+
+	envContent := fmt.Sprintf("USERNAME_PONTO=%s\nPASSWORD_PONTO=%s\n", creds.Username, creds.Password)
+	envFile := filepath.Join(configDir, envFileName)
+	if err := os.WriteFile(envFile, []byte(envContent), 0600); err != nil {
+		return fmt.Errorf("erro ao salvar credenciais: %w", err)
+	}
+
+	return nil
+}
+
+func ConfirmarSalvamentoCredenciais(creds Credentials) (bool, error) {
 	// Pergunta se deseja salvar
 	confirmPrompt := promptui.Prompt{
 		Label:     "Deseja salvar as credenciais? (Recomendado)",
@@ -102,26 +117,10 @@ func SalvarCredenciais(creds Credentials) error {
 	if err != nil {
 		if err == promptui.ErrAbort {
 			fmt.Println("\nCredenciais não serão salvas. Você precisará inseri-las novamente na próxima execução.")
-			return nil
+			return false, nil
 		}
-		return fmt.Errorf("erro na confirmação: %w", err)
+		return false, fmt.Errorf("erro na confirmação: %w", err)
 	}
 
-	if resultado == "y" || resultado == "Y" {
-		configDir := filepath.Join(os.Getenv("HOME"), configDirName)
-		if err := os.MkdirAll(configDir, 0700); err != nil {
-			return fmt.Errorf("erro ao criar diretório de configuração: %w", err)
-		}
-
-		envContent := fmt.Sprintf("USERNAME_PONTO=%s\nPASSWORD_PONTO=%s\n", creds.Username, creds.Password)
-		envFile := filepath.Join(configDir, envFileName)
-		if err := os.WriteFile(envFile, []byte(envContent), 0600); err != nil {
-			return fmt.Errorf("erro ao salvar credenciais: %w", err)
-		}
-		fmt.Println("\nCredenciais salvas com sucesso")
-	} else {
-		fmt.Println("\nCredenciais não serão salvas. Você precisará inseri-las novamente na próxima execução.")
-	}
-
-	return nil
+	return resultado == "y" || resultado == "Y", nil
 }

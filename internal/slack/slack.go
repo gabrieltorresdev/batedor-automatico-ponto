@@ -15,7 +15,7 @@ import (
 
 const (
 	slackBaseURL     = "https://fintools-ot.slack.com"
-	slackDMURL       = "https://app.slack.com/client/TSAD5P1GB/C010LNL7KS9"
+	slackDMURL       = "https://app.slack.com/client/TSAD5P1GB/D045LMRNAJC"
 	slackRedirectURL = "https://fintools-ot.slack.com/ssb/redirect"
 
 	tempoLimiteOperacao = 30 * time.Second
@@ -102,7 +102,7 @@ func obterOpcoesNavegador(modoSilencioso bool) []chromedp.ExecAllocatorOption {
 	return append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", modoSilencioso),
 		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-gpu", false),
+		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("disable-extensions", true),
 		chromedp.Flag("disable-setuid-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
@@ -242,17 +242,15 @@ func (s *SessaoSlack) validarSessaoSomente() error {
 	}
 
 	// Se não estiver, tenta navegar para a URL base
-	return s.tentarNovamente(func() error {
-		if err := chromedp.Run(ctx, chromedp.Navigate(slackBaseURL)); err != nil {
-			return fmt.Errorf("erro ao navegar: %w", err)
-		}
+	if err := chromedp.Run(ctx, chromedp.Navigate(slackBaseURL)); err != nil {
+		return fmt.Errorf("erro ao navegar: %w", err)
+	}
 
-		if !s.eSessaoValida(ctx) {
-			return fmt.Errorf("sessão expirada")
-		}
+	if !s.eSessaoValida(ctx) {
+		return fmt.Errorf("sessão expirada")
+	}
 
-		return nil
-	})
+	return nil
 }
 
 func (s *SessaoSlack) navegarParaDM() error {

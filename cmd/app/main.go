@@ -97,8 +97,24 @@ func main() {
 
 	// Se as credenciais não estavam salvas e o login foi bem sucedido, oferece salvar
 	if credenciaisNaoSalvas {
-		if err := auth.SalvarCredenciais(creds); err != nil {
-			fmt.Printf("\n⚠️  Aviso: não foi possível salvar as credenciais: %v\n", err)
+		resultado, err := auth.ConfirmarSalvamentoCredenciais(creds)
+
+		if err != nil {
+			if err == promptui.ErrAbort {
+				fmt.Println("\nCredenciais não serão salvas. Você precisará inseri-las novamente na próxima execução.")
+			} else {
+				fmt.Println("Erro ao confirmar salvamento de credenciais:", err)
+			}
+		}
+
+		if resultado {
+			if err := auth.SalvarCredenciais(creds); err != nil {
+				fmt.Printf("\n⚠️  Aviso: não foi possível salvar as credenciais: %v\n", err)
+			} else {
+				fmt.Println("\nCredenciais salvas com sucesso")
+			}
+		} else {
+			fmt.Println("\nCredenciais não serão salvas. Você precisará inseri-las novamente na próxima execução.")
 		}
 	}
 
