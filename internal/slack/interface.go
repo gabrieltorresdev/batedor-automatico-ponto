@@ -73,27 +73,5 @@ func NewModulo(ctx context.Context, config Configuracao) (OperacoesSlack, error)
 		return nil, fmt.Errorf("falha ao criar operações do slack: %w", err)
 	}
 
-	// Tenta carregar cookies existentes
-	if err := ops.CarregarCookies(config.DiretorioConfig); err != nil {
-		fmt.Printf("\n⚠️  Aviso: Cookies do Slack não encontrados ou inválidos. Iniciando autenticação interativa...\n")
-
-		// Tenta autenticar interativamente
-		if err := ops.Autenticar(); err != nil {
-			ops.Close()
-			return nil, fmt.Errorf("falha na autenticação interativa do Slack: %w", err)
-		}
-
-		// Valida a sessão após autenticação
-		if err := ops.ValidarSessao(); err != nil {
-			ops.Close()
-			return nil, fmt.Errorf("falha ao validar sessão após autenticação: %w", err)
-		}
-
-		// Salva os cookies após autenticação bem-sucedida
-		if err := ops.SalvarCookies(config.DiretorioConfig); err != nil {
-			fmt.Printf("\n⚠️  Aviso: Não foi possível salvar os cookies do Slack: %v\n", err)
-		}
-	}
-
 	return ops, nil
 }

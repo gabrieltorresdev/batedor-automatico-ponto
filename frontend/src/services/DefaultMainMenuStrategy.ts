@@ -1,6 +1,8 @@
 import { MainMenuAction, MainMenuActionType, MainMenuStrategy } from "@/types/ponto";
 import { useNotifyStore } from "@/store/notifyStore";
 import { useSlackStore } from "@/store/slackStore";
+import { Clock, Building2, MessageCircle, UserRoundCheck, Sparkle } from "lucide-react";
+import { createElement } from "react";
 
 export class DefaultMainMenuStrategy implements MainMenuStrategy {
     private getSlackAvailability(): boolean {
@@ -15,7 +17,7 @@ export class DefaultMainMenuStrategy implements MainMenuStrategy {
                 type: 'ponto_slack',
                 label: 'Marcar Ponto + Slack',
                 description: 'Registra o ponto e atualiza status/mensagem no Slack',
-                icon: '✨',
+                icon: createElement(Sparkle, { color: '#facc15' }),
                 isAvailable: isSlackAvailable,
                 fixed: true,
             },
@@ -23,15 +25,15 @@ export class DefaultMainMenuStrategy implements MainMenuStrategy {
                 type: 'ponto',
                 label: 'Marcar Ponto',
                 description: 'Registra o ponto sem atualizar o Slack',
-                icon: '🕒',
+                icon: createElement(Clock, { color: '#d40000' }),
                 isAvailable: true,
                 fixed: false,
             },
             {
                 type: 'slack_message',
-                label: 'Enviar Mensagem',
+                label: 'Enviar Mensagem no Slack',
                 description: 'Envia uma mensagem no canal do Slack',
-                icon: '💬',
+                icon: createElement(MessageCircle, { color: '#d40000' }),
                 isAvailable: isSlackAvailable,
                 fixed: false,
             },
@@ -40,9 +42,9 @@ export class DefaultMainMenuStrategy implements MainMenuStrategy {
 
     async executeAction(type: MainMenuActionType): Promise<string | void> {
         const addNotification = useNotifyStore.getState().addNotification;
-        const { isAuthenticated } = useSlackStore.getState();
+        const isSlackAvailable = this.getSlackAvailability();
 
-        if (!isAuthenticated && this.requiresSlack(type)) {
+        if (!isSlackAvailable && this.requiresSlack(type)) {
             addNotification('Configure o Slack primeiro', 'warning');
             return;
         }

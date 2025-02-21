@@ -168,52 +168,48 @@ func obterCaminhoCookies(diretorio string) string {
 }
 
 func (s *SessaoSlack) SalvarCookies(diretorio string) error {
-	return s.tentarNovamente(func() error {
-		cookies, err := s.navegador.ObterCookies()
-		if err != nil {
-			return fmt.Errorf("erro ao obter cookies: %w", err)
-		}
+	cookies, err := s.navegador.ObterCookies()
+	if err != nil {
+		return fmt.Errorf("erro ao obter cookies: %w", err)
+	}
 
-		if len(cookies) == 0 {
-			return fmt.Errorf("nenhum cookie encontrado")
-		}
+	if len(cookies) == 0 {
+		return fmt.Errorf("nenhum cookie encontrado")
+	}
 
-		caminho := obterCaminhoCookies(diretorio)
-		dados, err := json.Marshal(cookies)
-		if err != nil {
-			return fmt.Errorf("erro ao serializar cookies: %w", err)
-		}
+	caminho := obterCaminhoCookies(diretorio)
+	dados, err := json.Marshal(cookies)
+	if err != nil {
+		return fmt.Errorf("erro ao serializar cookies: %w", err)
+	}
 
-		if err := os.WriteFile(caminho, dados, 0600); err != nil {
-			return fmt.Errorf("erro ao salvar cookies: %w", err)
-		}
+	if err := os.WriteFile(caminho, dados, 0600); err != nil {
+		return fmt.Errorf("erro ao salvar cookies: %w", err)
+	}
 
-		return nil
-	})
+	return nil
 }
 
 func (s *SessaoSlack) CarregarCookies(diretorio string) error {
-	return s.tentarNovamente(func() error {
-		dados, err := os.ReadFile(obterCaminhoCookies(diretorio))
-		if err != nil {
-			return fmt.Errorf("erro ao ler cookies: %w", err)
-		}
+	dados, err := os.ReadFile(obterCaminhoCookies(diretorio))
+	if err != nil {
+		return fmt.Errorf("erro ao ler cookies: %w", err)
+	}
 
-		var cookies []*network.Cookie
-		if err := json.Unmarshal(dados, &cookies); err != nil {
-			return fmt.Errorf("erro ao deserializar cookies: %w", err)
-		}
+	var cookies []*network.Cookie
+	if err := json.Unmarshal(dados, &cookies); err != nil {
+		return fmt.Errorf("erro ao deserializar cookies: %w", err)
+	}
 
-		if len(cookies) == 0 {
-			return fmt.Errorf("arquivo de cookies vazio")
-		}
+	if len(cookies) == 0 {
+		return fmt.Errorf("arquivo de cookies vazio")
+	}
 
-		if err := s.navegador.DefinirCookies(cookies); err != nil {
-			return fmt.Errorf("erro ao restaurar cookies: %w", err)
-		}
+	if err := s.navegador.DefinirCookies(cookies); err != nil {
+		return fmt.Errorf("erro ao restaurar cookies: %w", err)
+	}
 
-		return nil
-	})
+	return nil
 }
 
 func (s *SessaoSlack) obterURLAtual(ctx context.Context) (string, error) {

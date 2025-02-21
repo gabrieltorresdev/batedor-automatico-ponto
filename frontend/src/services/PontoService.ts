@@ -10,8 +10,21 @@ export type TipoOperacao = 'entrada' | 'almoco' | 'saida';
 // Mapeamento dos valores para exibição
 const operacaoDisplayMap: Record<TipoOperacao, string> = {
     'entrada': 'Entrada',
-    'almoco': 'Saída refeição/descanso',
+    'almoco': 'Saída Refeição/Descanso',
     'saida': 'Saída'
+};
+
+// Mapeamento reverso para normalização
+const operacaoNormalizeMap: Record<string, TipoOperacao> = {
+    'entrada': 'entrada',
+    'saída refeição/descanso': 'almoco',
+    'saida refeicao/descanso': 'almoco',
+    'almoco': 'almoco',
+    'saída': 'saida',
+    'saida': 'saida',
+    '0': 'entrada',
+    '1': 'almoco',
+    '2': 'saida'
 };
 
 class PontoService {
@@ -29,27 +42,58 @@ class PontoService {
 
     async obterOperacoesDisponiveis(): Promise<TipoOperacao[]> {
         const operacoes = await ObterOperacoesDisponiveis();
-        return operacoes.map(op => {
-            const operacao = op as TipoOperacao;
-            if (!operacaoDisplayMap[operacao]) {
-                console.warn('Operação desconhecida:', op);
-                return 'entrada'; // fallback seguro
+        // Remove duplicatas e mapeia os valores
+        return [...new Set(operacoes)].map(op => this.normalizarOperacao(op));
+    }
+
+    getOperacaoDisplay(operacao: TipoOperacao | string | number): string {
+        const normalizedOp = this.normalizarOperacao(operacao);
+        return operacaoDisplayMap[normalizedOp];
+    }
+
+    normalizarOperacao(operacao: string | number): TipoOperacao {
+        if (typeof operacao === 'number') {
+            const opStr = operacao.toString();
+            if (operacaoNormalizeMap[opStr]) {
+                return operacaoNormalizeMap[opStr];
             }
-            return operacao;
-        });
+            // Se não encontrar no mapa, usa a lógica antiga
+            switch (operacao) {
+                case 0: return 'entrada';
+                case 1: return 'almoco';
+                case 2: return 'saida';
+                default: throw new Error(`Operação inválida: ${operacao}`);
+            }
+        }
+
+        const operacaoLower = operacao.toString().toLowerCase().trim();
+        const normalizedOp = operacaoNormalizeMap[operacaoLower];
+        if (!normalizedOp) {
+            throw new Error(`Operação inválida: ${operacao}`);
+        }
+        return normalizedOp;
     }
 
-    getOperacaoDisplay(operacao: TipoOperacao): string {
-        return operacaoDisplayMap[operacao] || operacaoDisplayMap.entrada;
+    // Função auxiliar para normalizar localização
+    normalizarLocalizacao(localizacao: string): string {
+        const loc = localizacao.toUpperCase().trim();
+        if (loc === 'HOME OFFICE' || loc.includes('HOME')) return 'HOME OFFICE';
+        if (loc === 'ESCRITÓRIO' || loc.includes('ESCRIT')) return 'ESCRITÓRIO';
+        return loc;
     }
 
-    async executarOperacao(operacao: TipoOperacao): Promise<void> {
-        // Converte para o índice numérico baseado na ordem do enum no backend
-        const operacaoIndice = {
+    async executarOperacao(operacao: TipoOperacao | string | number): Promise<void> {
+        const operacaoNormalizada = this.normalizarOperacao(operacao);
+        const mapeamentoIndices: Record<TipoOperacao, number> = {
             'entrada': 0,
             'almoco': 1,
             'saida': 2
-        }[operacao] || 0;
+        };
+        
+        const operacaoIndice = mapeamentoIndices[operacaoNormalizada];
+        if (operacaoIndice === undefined) {
+            throw new Error(`Operação inválida: ${operacao}`);
+        }
         
         await ExecutarOperacao(operacaoIndice);
     }

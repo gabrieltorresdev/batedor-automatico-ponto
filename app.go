@@ -6,27 +6,60 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gabrieltorresdev/batedor-automatico-ponto/internal/auth"
 	"github.com/gabrieltorresdev/batedor-automatico-ponto/internal/clockin"
 	"github.com/gabrieltorresdev/batedor-automatico-ponto/internal/slack"
 )
 
+// Interfaces para inversão de dependência
+type AuthService interface {
+	Login(credentials auth.Credentials) error
+	GetContext() context.Context
+	Close()
+}
+
+type ClockInService interface {
+	ObterLocalizacaoAtual() (string, error)
+	ObterLocalizacoesDisponiveis() ([]clockin.Localizacao, error)
+	SelecionarLocalizacao(localizacao clockin.Localizacao) error
+	ObterOperacoesDisponiveis() ([]clockin.TipoOperacao, error)
+	ExecutarOperacao(operacao clockin.TipoOperacao) error
+	Close()
+}
+
+type SlackService interface {
+	ValidarSessao() error
+	CarregarCookies(dir string) error
+	Autenticar() error
+	SalvarCookies(dir string) error
+	ObterStatusAtual() (*slack.Status, error)
+	DefinirStatus(status slack.Status) error
+	LimparStatus() error
+	EnviarMensagem(mensagem string) error
+	PrepararMensagem(tipo string) (bool, string, error)
+	Close()
+}
+
 // App struct
 type App struct {
 	ctx         context.Context
-	authModule  auth.Module
-	pontoModule clockin.Module
-	slackModule slack.OperacoesSlack
+	authModule  AuthService
+	pontoModule ClockInService
+	slackModule SlackService
+	configDir   string
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	home, _ := os.UserHomeDir()
+	return &App{
+		configDir: filepath.Join(home, ".batedorponto"),
+	}
 }
 
 // startup is called when the app starts. The context is saved
-// so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 }
@@ -34,10 +67,14 @@ func (a *App) startup(ctx context.Context) {
 // shutdown is called at application termination
 func (a *App) shutdown(ctx context.Context) {
 	if a.authModule != nil {
-		a.authModule.Close()
+		go func() {
+			a.authModule.Close()
+		}()
 	}
 	if a.slackModule != nil {
-		a.slackModule.Close()
+		go func() {
+			a.slackModule.Close()
+		}()
 	}
 }
 
@@ -60,7 +97,6 @@ type OperationRequest struct {
 	Type string
 }
 
-// Tipos para o Slack
 type SlackConfig struct {
 	DiretorioConfig string
 	ModoSilencioso  bool
@@ -80,6 +116,7 @@ func (a *App) initializeAuthModule() error {
 	authModule, err := auth.NewModule(auth.Config{
 		Headless: true,
 		UseMock:  true,
+		Context:  a.ctx,
 	})
 	if err != nil {
 		return fmt.Errorf("falha ao inicializar módulo de autenticação: %w", err)
@@ -103,35 +140,30 @@ func (a *App) initializePontoModule() error {
 
 // LoginPonto tenta fazer login no sistema
 func (a *App) LoginPonto(username string, password string) error {
-	// Primeiro inicializa o módulo de autenticação
 	if err := a.initializeAuthModule(); err != nil {
-		return err
+		return fmt.Errorf("erro ao inicializar módulo de autenticação: %w", err)
 	}
 
-	// Tenta fazer login
-	err := a.authModule.Login(auth.Credentials{
+	credentials := auth.Credentials{
 		Username: username,
 		Password: password,
-	})
+	}
 
-	if err != nil {
-		// Se houver erro de autenticação, deleta as credenciais
+	if err := a.authModule.Login(credentials); err != nil {
 		var loginErr *auth.LoginError
 		if errors.As(err, &loginErr) && loginErr.Type == "auth" {
 			if delErr := a.DeletarCredenciais(); delErr != nil {
-				// Loga o erro mas não interrompe o fluxo
 				println("Erro ao deletar credenciais:", delErr.Error())
 			}
+			return loginErr
 		}
-		return err
+		return fmt.Errorf("erro ao fazer login: %w", err)
 	}
 
-	// Se o login foi bem sucedido, inicializa o módulo de ponto
 	if err := a.initializePontoModule(); err != nil {
 		return err
 	}
 
-	// Salva as credenciais
 	return a.SalvarCredenciais(&Credentials{
 		Username: username,
 		Password: password,
@@ -143,12 +175,11 @@ func (a *App) VerificarCredenciaisSalvas() error {
 	creds, err := auth.CarregarCredenciais()
 	if err != nil {
 		if err == auth.ErrCredenciaisNaoEncontradas {
-			return nil // Não é um erro, apenas não há credenciais
+			return nil
 		}
-		return err
+		return fmt.Errorf("erro ao carregar credenciais: %w", err)
 	}
 
-	// Se encontrou credenciais, tenta fazer login
 	return a.LoginPonto(creds.Username, creds.Password)
 }
 
@@ -174,76 +205,73 @@ func (a *App) SalvarCredenciais(creds *Credentials) error {
 
 // DeletarCredenciais remove o arquivo de credenciais
 func (a *App) DeletarCredenciais() error {
-	// Remove o arquivo .env
-	home, err := os.UserHomeDir()
-	if err != nil {
+	envFile := filepath.Join(a.configDir, ".env")
+	if _, err := os.Stat(envFile); err == nil {
+		return os.Remove(envFile)
+	}
+	return nil
+}
+
+// VerificarSessaoSlack verifica se existe uma sessão válida do Slack
+func (a *App) VerificarSessaoSlack() error {
+	if err := a.initializeSlackModule(true); err != nil {
 		return err
 	}
 
-	configDir := filepath.Join(home, ".batedorponto")
-	envFile := filepath.Join(configDir, ".env")
-
-	// Remove o arquivo se ele existir
-	if _, err := os.Stat(envFile); err == nil {
-		return os.Remove(envFile)
+	if err := a.slackModule.ValidarSessao(); err != nil {
+		if err := a.slackModule.CarregarCookies(a.configDir); err != nil {
+			return fmt.Errorf("erro ao carregar cookies de sessão do Slack: %w", err)
+		}
+		return a.slackModule.ValidarSessao()
 	}
 
 	return nil
 }
 
-// VerificarSessaoSlack verifica se existe uma sessão válida do Slack (sem interação)
-func (a *App) VerificarSessaoSlack() error {
-	// Obtém o diretório de configuração internamente
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("erro ao obter diretório home: %w", err)
+func (a *App) initializeSlackModule(silencioso bool) error {
+	if a.slackModule != nil {
+		oldModule := a.slackModule
+		a.slackModule = nil
+		go oldModule.Close()
 	}
 
-	configDir := filepath.Join(home, ".batedorponto")
-
-	// Inicializa o módulo em modo silencioso
 	slackModule, err := slack.NewModulo(a.ctx, slack.Configuracao{
-		DiretorioConfig: configDir,
-		ModoSilencioso:  true, // Sempre silencioso para verificação
+		DiretorioConfig: a.configDir,
+		ModoSilencioso:  silencioso,
 	})
 
 	if err != nil {
-		return err
+		return fmt.Errorf("erro ao inicializar módulo do Slack: %w", err)
 	}
 
-	// Guarda o módulo para uso futuro
 	a.slackModule = slackModule
-
-	// Tenta validar a sessão
-	return slackModule.ValidarSessao()
+	return nil
 }
 
-// InicializarSlack inicia o processo de configuração do Slack (com interação)
+// InicializarSlack inicia o processo de configuração do Slack
 func (a *App) InicializarSlack() error {
-	// Se já existe um módulo, fecha para reiniciar em modo interativo
-	if a.slackModule != nil {
-		a.slackModule.Close()
-	}
-
-	// Obtém o diretório de configuração internamente
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("erro ao obter diretório home: %w", err)
-	}
-
-	configDir := filepath.Join(home, ".batedorponto")
-
-	// Inicializa o módulo em modo interativo
-	slackModule, err := slack.NewModulo(a.ctx, slack.Configuracao{
-		DiretorioConfig: configDir,
-		ModoSilencioso:  false, // Modo interativo para configuração
-	})
-
-	if err != nil {
+	if err := a.initializeSlackModule(true); err != nil {
 		return err
 	}
 
-	a.slackModule = slackModule
+	if err := a.slackModule.CarregarCookies(a.configDir); err != nil {
+		fmt.Println("⚠️ Falha ao carregar cookies, iniciando autenticação...")
+
+		if err := a.initializeSlackModule(false); err != nil {
+			return err
+		}
+
+		if err := a.slackModule.Autenticar(); err != nil {
+			return fmt.Errorf("erro na autenticação do Slack: %w", err)
+		}
+
+		if err := a.slackModule.SalvarCookies(a.configDir); err != nil {
+			return fmt.Errorf("erro ao salvar cookies do Slack: %w", err)
+		}
+
+		return a.initializeSlackModule(true)
+	}
+
 	return nil
 }
 
@@ -252,7 +280,15 @@ func (a *App) ObterLocalizacaoAtual() (string, error) {
 	if a.pontoModule == nil {
 		return "", fmt.Errorf("módulo de ponto não inicializado")
 	}
-	return a.pontoModule.ObterLocalizacaoAtual()
+
+	loc, err := a.pontoModule.ObterLocalizacaoAtual()
+	if err != nil && strings.Contains(err.Error(), "sessão expirada") {
+		if err := a.reinicializarModuloPonto(); err != nil {
+			return "", fmt.Errorf("erro ao reinicializar sessão: %w", err)
+		}
+		return a.pontoModule.ObterLocalizacaoAtual()
+	}
+	return loc, err
 }
 
 // ObterLocalizacoesDisponiveis returns available locations
@@ -260,7 +296,15 @@ func (a *App) ObterLocalizacoesDisponiveis() ([]clockin.Localizacao, error) {
 	if a.pontoModule == nil {
 		return nil, fmt.Errorf("módulo de ponto não inicializado")
 	}
-	return a.pontoModule.ObterLocalizacoesDisponiveis()
+
+	locs, err := a.pontoModule.ObterLocalizacoesDisponiveis()
+	if err != nil && strings.Contains(err.Error(), "sessão expirada") {
+		if err := a.reinicializarModuloPonto(); err != nil {
+			return nil, fmt.Errorf("erro ao reinicializar sessão: %w", err)
+		}
+		return a.pontoModule.ObterLocalizacoesDisponiveis()
+	}
+	return locs, err
 }
 
 // SelecionarLocalizacao selects a location
@@ -268,7 +312,15 @@ func (a *App) SelecionarLocalizacao(localizacao clockin.Localizacao) error {
 	if a.pontoModule == nil {
 		return fmt.Errorf("módulo de ponto não inicializado")
 	}
-	return a.pontoModule.SelecionarLocalizacao(localizacao)
+
+	err := a.pontoModule.SelecionarLocalizacao(localizacao)
+	if err != nil && strings.Contains(err.Error(), "sessão expirada") {
+		if err := a.reinicializarModuloPonto(); err != nil {
+			return fmt.Errorf("erro ao reinicializar sessão: %w", err)
+		}
+		return a.pontoModule.SelecionarLocalizacao(localizacao)
+	}
+	return err
 }
 
 // ObterOperacoesDisponiveis returns available operations
@@ -276,7 +328,15 @@ func (a *App) ObterOperacoesDisponiveis() ([]clockin.TipoOperacao, error) {
 	if a.pontoModule == nil {
 		return nil, fmt.Errorf("módulo de ponto não inicializado")
 	}
-	return a.pontoModule.ObterOperacoesDisponiveis()
+
+	ops, err := a.pontoModule.ObterOperacoesDisponiveis()
+	if err != nil && strings.Contains(err.Error(), "sessão expirada") {
+		if err := a.reinicializarModuloPonto(); err != nil {
+			return nil, fmt.Errorf("erro ao reinicializar sessão: %w", err)
+		}
+		return a.pontoModule.ObterOperacoesDisponiveis()
+	}
+	return ops, err
 }
 
 // ExecutarOperacao executes a clock-in operation
@@ -284,7 +344,15 @@ func (a *App) ExecutarOperacao(operacao clockin.TipoOperacao) error {
 	if a.pontoModule == nil {
 		return fmt.Errorf("módulo de ponto não inicializado")
 	}
-	return a.pontoModule.ExecutarOperacao(operacao)
+
+	err := a.pontoModule.ExecutarOperacao(operacao)
+	if err != nil && strings.Contains(err.Error(), "sessão expirada") {
+		if err := a.reinicializarModuloPonto(); err != nil {
+			return fmt.Errorf("erro ao reinicializar sessão: %w", err)
+		}
+		return a.pontoModule.ExecutarOperacao(operacao)
+	}
+	return err
 }
 
 // ObterStatusAtual returns the current Slack status
@@ -325,4 +393,44 @@ func (a *App) PrepararMensagem(tipoMensagem string) (bool, string, error) {
 		return false, "", fmt.Errorf("módulo Slack não inicializado")
 	}
 	return a.slackModule.PrepararMensagem(tipoMensagem)
+}
+
+// reinicializarModuloPonto reinicializa o módulo de ponto após uma queda de sessão
+func (a *App) reinicializarModuloPonto() error {
+	if a.authModule != nil {
+		a.authModule.Close()
+		a.authModule = nil
+	}
+	if a.pontoModule != nil {
+		a.pontoModule.Close()
+		a.pontoModule = nil
+	}
+
+	creds, err := auth.CarregarCredenciais()
+	if err != nil {
+		return fmt.Errorf("erro ao carregar credenciais: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.ctx = ctx
+
+	defer func() {
+		if err != nil {
+			cancel()
+		}
+	}()
+
+	if err := a.initializeAuthModule(); err != nil {
+		return fmt.Errorf("erro ao inicializar módulo de autenticação: %w", err)
+	}
+
+	if err := a.authModule.Login(creds); err != nil {
+		return fmt.Errorf("erro ao fazer login: %w", err)
+	}
+
+	if err := a.initializePontoModule(); err != nil {
+		return fmt.Errorf("erro ao inicializar módulo de ponto: %w", err)
+	}
+
+	return nil
 }

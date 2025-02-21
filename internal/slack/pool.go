@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	maxPoolSize     = 3  // Máximo de sessões simultâneas
-	sessionTimeout  = 30 // Tempo em minutos para expirar uma sessão
-	cleanupInterval = 5  // Intervalo em minutos para limpar sessões expiradas
+	maxPoolSize     = 3      // Máximo de sessões simultâneas
+	sessionTimeout  = 60 * 8 // Tempo em minutos para expirar uma sessão
+	cleanupInterval = 5      // Intervalo em minutos para limpar sessões expiradas
 )
 
 // SessionInfo mantém informações sobre uma sessão
@@ -97,32 +97,7 @@ func (p *SessionPool) createNewSession(ctx context.Context) (*SessaoSlack, error
 
 	// Tenta carregar cookies
 	if err := sessao.CarregarCookies(p.config.DiretorioConfig); err != nil {
-		// Se não conseguir carregar cookies, tenta autenticar
-		tempSessao := NovaSessaoSlack(sessionCtx, false)
-		if tempSessao == nil {
-			cancel()
-			return nil, fmt.Errorf("falha ao criar sessão interativa")
-		}
-
-		if err := tempSessao.Autenticar(); err != nil {
-			tempSessao.Close()
-			cancel()
-			return nil, fmt.Errorf("falha na autenticação: %w", err)
-		}
-
-		if err := tempSessao.SalvarCookies(p.config.DiretorioConfig); err != nil {
-			tempSessao.Close()
-			cancel()
-			return nil, fmt.Errorf("falha ao salvar cookies: %w", err)
-		}
-
-		tempSessao.Close()
-
-		// Tenta carregar cookies novamente com a sessão original
-		if err := sessao.CarregarCookies(p.config.DiretorioConfig); err != nil {
-			cancel()
-			return nil, fmt.Errorf("falha ao carregar cookies após autenticação: %w", err)
-		}
+		fmt.Printf("\nCookies do Slack não encontrados ou inválidos. Será preciso autenticar novamente.\n")
 	}
 
 	// Adiciona a sessão ao pool

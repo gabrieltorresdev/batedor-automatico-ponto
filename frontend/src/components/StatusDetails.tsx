@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Status } from '@/types/slack';
+import { Button } from './ui/button';
 
 const normalizeEmoji = (emoji: string) => {
     // Se o emoji for uma URL de imagem (começa com /)
@@ -52,22 +53,26 @@ export default function StatusDetails() {
     }
 
     return (
-        <Card 
-            className="p-2 cursor-pointer hover:bg-accent/50 transition-colors"
+        <Button 
+            className="flex h-12 items-center gap-3 p-3 rounded-lg duration-200 hover:bg-accent cursor-pointer transition-colors justify-start w-full bg-card"
             onClick={() => navigate('/slack/status')}
+            variant="ghost"
         >
             <div className="flex items-center gap-3">
                 <div className="flex items-center justify-center w-8 h-8 rounded-full bg-accent/10">
                     {currentStatus ? (
+                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-accent/10">
                         <StatusEmoji emoji={currentStatus.emoji} />
+                    </div>
+                        
                     ) : (
                         <span className="text-xs text-muted-foreground">?</span>
                     )}
                 </div>
-                <span className="text-sm font-medium line-clamp-1">
+                <span className="text-sm font-medium line-clamp-1 text-start">
                     {currentStatus ? currentStatus.mensagem : 'Nenhum status definido'}
                 </span>
             </div>
-        </Card>
+        </Button>
     );
 } 

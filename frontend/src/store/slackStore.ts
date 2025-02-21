@@ -35,7 +35,6 @@ export const useSlackStore = create<SlackState>((set) => ({
             // Inicia processo de configuração interativa
             await InicializarSlack();
             // Após configuração, verifica se a sessão está válida
-            await VerificarSessaoSlack();
             set({ isAuthenticated: true, isInitialized: true });
         } catch (err) {
             set({ isAuthenticated: false });

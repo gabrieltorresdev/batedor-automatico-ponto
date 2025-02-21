@@ -6,7 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import PontoView from "./components/PontoView";
 import SlackStatusView from "./components/SlackStatusView";
 import SlackMessageView from "./components/SlackMessageView";
-import PontoSlackView from "./views/PontoSlackView";
+import PontoSlackView from "./components/PontoSlackView";
 import Header from "./components/Header";
 
 const queryClient = new QueryClient({

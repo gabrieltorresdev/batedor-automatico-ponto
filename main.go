@@ -18,7 +18,7 @@ func main() {
 	// Create application with options
 	err := wails.Run(&options.App{
 		Title:  "BatPonto Fintools",
-		Width:  500,
+		Width:  400,
 		Height: 500,
 		AssetServer: &assetserver.Options{
 			Assets: assets,

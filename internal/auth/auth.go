@@ -27,6 +27,7 @@ func (e *LoginError) Error() string {
 var (
 	ErrEmptyCredentials   = &LoginError{Type: "validation", Message: "usuário e senha são obrigatórios"}
 	ErrInvalidCredentials = &LoginError{Type: "auth", Message: "credenciais inválidas"}
+	ErrUserBlocked        = &LoginError{Type: "blocked", Message: "usuário temporariamente bloqueado"}
 )
 
 const (
@@ -65,8 +66,11 @@ type AuthSession struct {
 }
 
 // NewAuthSession creates a new authentication session
-func NewAuthSession(headless bool) BrowserSession {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func NewAuthSession(headless bool, ctx context.Context) BrowserSession {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
@@ -225,8 +229,10 @@ func (a *AuthSession) checkForLoginErrors() (bool, error) {
 		}
 	}
 
-	// Verifica várias possíveis mensagens de erro
+	// Verifica mensagens de bloqueio primeiro
 	mensagemErroLower := strings.ToLower(mensagemErro)
+
+	// Verifica várias possíveis mensagens de erro de credenciais
 	mensagensErro := []string{
 		"acesso negado",
 		"credenciais inválidas",
@@ -241,6 +247,11 @@ func (a *AuthSession) checkForLoginErrors() (bool, error) {
 				Message: "credenciais inválidas",
 			}
 		}
+	}
+
+	if strings.Contains(mensagemErroLower, "bloqueado") ||
+		strings.Contains(mensagemErroLower, "intervalo") {
+		return false, ErrUserBlocked
 	}
 
 	// Se encontrou alguma mensagem de erro mas não é uma das conhecidas, loga para debug

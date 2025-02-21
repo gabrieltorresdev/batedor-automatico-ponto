@@ -1,50 +1,94 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LoginPonto, VerificarCredenciaisSalvas } from '../../wailsjs/go/main/App';
-import { useNotifyStore } from '../store/notifyStore';
-import { useSlackStore } from '../store/slackStore';
+import { LoginPonto, VerificarCredenciaisSalvas, CarregarCredenciais } from '../../wailsjs/go/main/App';
+import { useAuthStore } from '@/store/authStore';
+import { useNotifyStore } from '@/store/notifyStore';
+import { useSlackStore } from '@/store/slackStore';
 
 export const useAuth = () => {
-    const navigate = useNavigate();
-    const addNotification = useNotifyStore((state) => state.addNotification);
-    const verifySlackSession = useSlackStore((state) => state.verifySlackSession);
     const [isLoading, setIsLoading] = useState(true);
+    const navigate = useNavigate();
+    const { setAuthenticated, setBlocked, setUnauthenticated } = useAuthStore();
+    const { verifySlackSession } = useSlackStore();
+    const addNotification = useNotifyStore(state => state.addNotification);
+
+    const verificarSlack = async () => {
+        try {
+            await verifySlackSession();
+        } catch (error) {
+            console.debug('Slack não configurado:', error);
+        }
+    };
+
+    const handleAuthError = (error: any, username?: string) => {
+        const errorMessage = error?.message || error?.toString() || 'Erro desconhecido';
+        console.debug('Erro de autenticação:', error);
+
+        if (errorMessage.toLowerCase().includes('bloqueado') || 
+            errorMessage.toLowerCase().includes('intervalo')) {
+            if (username) {
+                setBlocked(username);
+                addNotification(errorMessage, 'warning');
+                verificarSlack();
+                navigate('/dashboard');
+                return true;
+            }
+        }
+        return false;
+    };
 
     const login = async (username: string, password: string) => {
         try {
             setIsLoading(true);
-            // Primeiro faz login no ponto
             await LoginPonto(username, password);
-            // Depois verifica o Slack silenciosamente
-            await verifySlackSession();
-            addNotification('Login realizado com sucesso!', 'success');
+            setAuthenticated(username);
+            verificarSlack();
             navigate('/dashboard');
-        } catch (err) {
-            addNotification((err as Error).message || 'Erro ao realizar login', 'error');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const checkSavedCredentials = async () => {
-        try {
-            setIsLoading(true);
-            // Verifica credenciais e Slack em paralelo
-            await Promise.all([
-                VerificarCredenciaisSalvas(),
-                verifySlackSession()
-            ]);
-            navigate('/dashboard');
-        } catch (err) {
-            // Ignora erros do Slack, apenas loga para debug
-            console.debug('Verificação inicial:', err);
+        } catch (error) {
+            if (!handleAuthError(error, username)) {
+                setUnauthenticated();
+                const errorMessage = (error as Error)?.message || 'Erro ao fazer login';
+                addNotification(errorMessage, 'error');
+                throw error;
+            }
         } finally {
             setIsLoading(false);
         }
     };
 
     useEffect(() => {
-        checkSavedCredentials();
+        const verificarCredenciais = async () => {
+            setIsLoading(true);
+            try {
+                verificarSlack();
+
+                const credenciais = await CarregarCredenciais().catch(() => null);
+                if (!credenciais?.Username) {
+                    console.debug('Nenhuma credencial encontrada');
+                    setUnauthenticated();
+                    return;
+                }
+
+                try {
+                    await VerificarCredenciaisSalvas();
+                    console.debug('Credenciais verificadas com sucesso');
+                    setAuthenticated(credenciais.Username);
+                    navigate('/dashboard');
+                } catch (error) {
+                    console.debug('Erro ao verificar credenciais:', error);
+                    if (!handleAuthError(error, credenciais.Username)) {
+                        setUnauthenticated();
+                    }
+                }
+            } catch (error) {
+                console.debug('Erro fatal ao verificar credenciais:', error);
+                setUnauthenticated();
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        verificarCredenciais();
     }, []);
 
     return {

@@ -24,6 +24,9 @@ type Config struct {
 
 	// UseMock determina se será usado o mock ao invés do browser real
 	UseMock bool
+
+	// Context é o contexto a ser usado para a sessão
+	Context context.Context
 }
 
 // NewModule creates a new instance of the Auth module
@@ -32,7 +35,7 @@ func NewModule(config Config) (Module, error) {
 		return NewMockSession(), nil
 	}
 
-	session := NewAuthSession(config.Headless)
+	session := NewAuthSession(config.Headless, config.Context)
 	if session == nil {
 		return nil, fmt.Errorf("failed to create auth session")
 	}

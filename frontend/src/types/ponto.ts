@@ -1,3 +1,5 @@
+import { ReactNode } from 'react';
+
 // Tipos de ações do menu principal
 export type MainMenuActionType = 
     | 'ponto_slack'     // Marcar ponto + Slack
@@ -10,7 +12,7 @@ export interface MainMenuAction {
     type: MainMenuActionType;
     label: string;
     description: string;
-    icon: string;
+    icon: ReactNode;
     isAvailable: boolean;
     fixed: boolean;
 }

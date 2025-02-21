@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useSlackStatus } from '@/hooks/useSlackStatus';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Trash2 } from 'lucide-react';
+import { Loader2, Slack, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Status } from '@/types/slack';
 import {
@@ -147,23 +147,23 @@ export default function SlackStatusView() {
     }
 
     return (
-        <div className="flex flex-col gap-6 max-w-xl mx-auto">
-            {/* Status Atual */}
-            <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-muted-foreground">Status Atual</h3>
+        <div className="flex flex-col gap-4">
+            <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                    <Slack className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs font-medium text-muted-foreground">Status Atual</span>
                     {currentStatus && (
                         <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => setShowClearConfirm(true)}
-                            className="text-muted-foreground hover:text-destructive"
+                            className="text-muted-foreground hover:text-destructive ml-auto h-6 w-6"
                         >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3 w-3" />
                         </Button>
                     )}
                 </div>
-                <div className="bg-card rounded-lg border shadow-sm">
+                <div>
                     {currentStatus ? (
                         <StatusCard status={currentStatus} />
                     ) : (
@@ -176,8 +176,11 @@ export default function SlackStatusView() {
 
             {/* Status Pré-definidos */}
             <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-start text-muted-foreground">Selecione o Novo Status</h3>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center gap-2">
+                    <Slack className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs font-medium text-muted-foreground text-start">Novo Status</span>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
                     {filteredPresets.map((status, index) => (
                         <StatusCard 
                             key={index}

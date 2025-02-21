@@ -4,7 +4,7 @@ import { useSlackMessage } from '@/hooks/useSlackMessage';
 import { TipoMensagem } from '@/services/SlackService';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
+import { Loader2, MessageSquare } from 'lucide-react';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -23,6 +23,9 @@ const MessageCard = ({ message, onClick }: { message: string; onClick?: () => vo
             onClick ? 'hover:bg-accent cursor-pointer' : 'bg-card'
         }`}
     >
+        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-accent/10">
+            <MessageSquare className="h-5 w-5 text-muted-foreground" />
+        </div>
         <span className="text-sm font-medium line-clamp-1 text-start">{message}</span>
     </div>
 );
@@ -78,10 +81,13 @@ export default function SlackMessageView() {
     }
 
     return (
-        <div className="flex flex-col gap-6 max-w-xl mx-auto">
+        <div className="flex flex-col gap-4">
             {/* Seleção de Tipo */}
-            <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-muted-foreground">Tipo de Mensagem</h3>
+            <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs font-medium text-muted-foreground">Tipo de Mensagem</span>
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                     {tiposMensagem.map(({ tipo, label }) => (
                         <Button
@@ -98,19 +104,20 @@ export default function SlackMessageView() {
 
             {/* Mensagens Predefinidas */}
             {selectedType && (
-                <div className="space-y-4">
-                    <h3 className="text-sm font-semibold text-muted-foreground">Selecione a Mensagem</h3>
-                    <Card className="p-2">
-                        <div className="grid grid-cols-1 gap-2">
-                            {getMensagensPreset(selectedType).map((mensagem, index) => (
-                                <MessageCard
-                                    key={index}
-                                    message={mensagem}
-                                    onClick={() => handleMessageSelect(mensagem)}
-                                />
-                            ))}
-                        </div>
-                    </Card>
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-xs font-medium text-muted-foreground">Selecione a Mensagem</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                        {getMensagensPreset(selectedType).map((mensagem, index) => (
+                            <MessageCard
+                                key={index}
+                                message={mensagem}
+                                onClick={() => handleMessageSelect(mensagem)}
+                            />
+                        ))}
+                    </div>
                 </div>
             )}
 

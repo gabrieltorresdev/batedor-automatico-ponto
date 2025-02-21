@@ -41,7 +41,9 @@ export const usePonto = () => {
         try {
             setIsLoading(true);
             await pontoService.selecionarLocalizacao(localizacao);
-            setLocalizacaoAtual(localizacao.Nome);
+            // Atualiza a localização atual após a seleção
+            const novaLocalizacao = await pontoService.obterLocalizacaoAtual();
+            setLocalizacaoAtual(novaLocalizacao);
             // Após selecionar localização, atualiza operações disponíveis
             await carregarOperacoesDisponiveis();
         } catch (error) {

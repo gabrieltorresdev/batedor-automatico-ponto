@@ -79,7 +79,7 @@ class SlackService {
             case 'saida':
                 return StatusFimExpediente;
             default:
-                return StatusTrabalhoPresencial;
+                throw new Error(`Operação inválida: ${operacao}`);
         }
     }
 
@@ -93,7 +93,7 @@ class SlackService {
             case 'saida':
                 return ['saindo', 'já volto'];
             default:
-                return [];
+                throw new Error(`Operação inválida: ${operacao}`);
         }
     }
 

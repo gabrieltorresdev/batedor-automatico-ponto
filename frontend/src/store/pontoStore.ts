@@ -48,7 +48,21 @@ export const usePontoStore = create<PontoStore>((set) => ({
     executarOperacao: async (operacao: string | number) => {
         set({ isLoading: true });
         try {
-            await ExecutarOperacao(operacao);
+            // Converte para o índice numérico baseado na ordem do enum no backend
+            let operacaoIndice: number;
+            
+            if (typeof operacao === 'number') {
+                operacaoIndice = operacao;
+            } else {
+                const operacaoStr = operacao.toString().toLowerCase();
+                operacaoIndice = {
+                    'entrada': 0,
+                    'almoco': 1,
+                    'saida': 2
+                }[operacaoStr] || 0;
+            }
+            
+            await ExecutarOperacao(operacaoIndice);
         } finally {
             set({ isLoading: false });
         }

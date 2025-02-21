@@ -39,11 +39,11 @@ func (e *ErroPonto) Error() string {
 func (op TipoOperacao) String() string {
 	switch op {
 	case Entrada:
-		return "entrada"
+		return "Entrada"
 	case Almoco:
-		return "almoco"
+		return "Saída refeição/descanso"
 	case Saida:
-		return "saida"
+		return "Saída"
 	default:
 		return "desconhecido"
 	}
@@ -141,6 +141,9 @@ func (g *GerenciadorPonto) tentarOperacaoBool(operacao func() (bool, error)) (bo
 }
 
 func (g *GerenciadorPonto) obterLocalizacaoAtual() (string, error) {
+	if err := g.validarSessao(); err != nil {
+		return "", err
+	}
 	return g.tentarOperacaoString(func() (string, error) {
 		var localizacaoAtual string
 		err := chromedp.Run(g.ctx,
@@ -179,6 +182,9 @@ func (g *GerenciadorPonto) obterLocalizacaoAtual() (string, error) {
 }
 
 func (g *GerenciadorPonto) obterLocalizacoesDisponiveis() ([]Localizacao, error) {
+	if err := g.validarSessao(); err != nil {
+		return nil, err
+	}
 	return g.tentarOperacaoLocalizacoes(func() ([]Localizacao, error) {
 		var localizacoes []Localizacao
 		err := chromedp.Run(g.ctx,
@@ -232,6 +238,9 @@ func (g *GerenciadorPonto) obterLocalizacoesDisponiveis() ([]Localizacao, error)
 }
 
 func (g *GerenciadorPonto) selecionarLocalizacao(localizacao Localizacao) error {
+	if err := g.validarSessao(); err != nil {
+		return err
+	}
 	_, err := g.tentarOperacaoBool(func() (bool, error) {
 		var sucesso bool
 		err := chromedp.Run(g.ctx,
@@ -288,6 +297,9 @@ func (g *GerenciadorPonto) selecionarLocalizacao(localizacao Localizacao) error 
 }
 
 func (g *GerenciadorPonto) obterOperacoesDisponiveis() ([]TipoOperacao, error) {
+	if err := g.validarSessao(); err != nil {
+		return nil, err
+	}
 	return g.tentarOperacaoOperacoes(func() ([]TipoOperacao, error) {
 		var operacoesStr []string
 		err := chromedp.Run(g.ctx,
@@ -347,6 +359,9 @@ func (g *GerenciadorPonto) obterOperacoesDisponiveis() ([]TipoOperacao, error) {
 }
 
 func (g *GerenciadorPonto) executarOperacao(operacao TipoOperacao) error {
+	if err := g.validarSessao(); err != nil {
+		return err
+	}
 	_, err := g.tentarOperacaoBool(func() (bool, error) {
 		var clicado bool
 		err := chromedp.Run(g.ctx,
@@ -464,6 +479,32 @@ func (g *GerenciadorPonto) tratarModalIntervalo() error {
 	}
 
 	return chromedp.Run(g.ctx, g.aguardarAjax())
+}
+
+func (g *GerenciadorPonto) validarSessao() error {
+	var elementosVisiveis bool
+	err := chromedp.Run(g.ctx,
+		g.aguardarAjax(),
+		chromedp.Evaluate(`
+			(function() {
+				const botoes = document.querySelectorAll('button');
+				for (const btn of botoes) {
+					if (btn.textContent.includes('Entrada') || 
+						btn.textContent.includes('Saída') || 
+						btn.textContent.includes('refeição')) {
+						return true;
+					}
+				}
+				return false;
+			})()
+		`, &elementosVisiveis),
+	)
+
+	if err != nil || !elementosVisiveis {
+		return fmt.Errorf("sessão expirada")
+	}
+
+	return nil
 }
 
 func (g *GerenciadorPonto) ObterLocalizacaoAtual() (string, error) {
