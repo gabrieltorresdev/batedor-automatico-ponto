@@ -7,7 +7,6 @@ import type { TipoMensagem } from '@/services/SlackService';
 export function useSlackMessage() {
     const addNotification = useNotifyStore((state) => state.addNotification);
 
-    // Mutation para enviar mensagem
     const { mutate: enviarMensagem, isPending: isEnviando } = useMutation({
         mutationFn: (mensagem: string) => slackService.enviarMensagem(mensagem),
         onSuccess: () => {
@@ -19,7 +18,6 @@ export function useSlackMessage() {
         }
     });
 
-    // Mutation para preparar mensagem
     const { mutate: prepararMensagem, isPending: isPreparando } = useMutation({
         mutationFn: (tipo: TipoMensagem) => slackService.prepararMensagem(tipo),
         onError: (error) => {

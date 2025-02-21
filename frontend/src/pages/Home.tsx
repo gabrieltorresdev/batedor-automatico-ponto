@@ -1,7 +1,6 @@
 import { Button } from "@/components/ui/button";
 import LoginForm from "../components/LoginForm";
 import { useAuth } from "../hooks/useAuth";
-import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function Home() {
