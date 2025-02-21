@@ -229,7 +229,6 @@ func (a *AuthSession) checkForLoginErrors() (bool, error) {
 		}
 	}
 
-	// Verifica mensagens de bloqueio primeiro
 	mensagemErroLower := strings.ToLower(mensagemErro)
 
 	// Verifica várias possíveis mensagens de erro de credenciais
@@ -250,7 +249,8 @@ func (a *AuthSession) checkForLoginErrors() (bool, error) {
 	}
 
 	if strings.Contains(mensagemErroLower, "bloqueado") ||
-		strings.Contains(mensagemErroLower, "intervalo") {
+		strings.Contains(mensagemErroLower, "intervalo") ||
+		strings.Contains(mensagemErroLower, "horário permitido") {
 		return false, ErrUserBlocked
 	}
 

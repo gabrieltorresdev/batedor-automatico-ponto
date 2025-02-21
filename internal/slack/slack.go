@@ -15,7 +15,7 @@ import (
 
 const (
 	slackBaseURL     = "https://fintools-ot.slack.com"
-	slackDMURL       = "https://app.slack.com/client/TSAD5P1GB/D045LMRNAJC"
+	slackDMURL       = "https://app.slack.com/client/TSAD5P1GB/C010LNL7KS9"
 	slackRedirectURL = "https://fintools-ot.slack.com/ssb/redirect"
 
 	tempoLimiteOperacao = 30 * time.Second
