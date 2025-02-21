@@ -17,37 +17,9 @@ interface LoginFormProps {
   onSubmit: (username: string, password: string) => Promise<void>;
 }
 
-// Componente para reduzir a duplicação dos campos do formulário
-const FormField = ({
-  type,
-  placeholder,
-  errorMessage,
-  registerProps,
-  disabled,
-}: {
-  type: string;
-  placeholder: string;
-  errorMessage?: string;
-  registerProps: any;
-  disabled: boolean;
-}) => (
-  <div className="flex flex-col gap-1">
-    <Input
-      type={type}
-      placeholder={placeholder}
-      disabled={disabled}
-      className="p-4 text-lg"
-      {...registerProps}
-    />
-    {errorMessage && (
-      <span className="text-sm text-red-500 text-start">{errorMessage}</span>
-    )}
-  </div>
-);
-
 const LoginForm: React.FC<LoginFormProps> = ({ onSubmit }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
-
+  
   const {
     register,
     handleSubmit,
@@ -56,7 +28,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSubmit }) => {
     resolver: zodResolver(loginSchema),
   });
 
-  const handleFormSubmit = async (data: LoginFormData) => {
+  const onSubmitForm = async (data: LoginFormData) => {
     setIsSubmitting(true);
     try {
       await onSubmit(data.username, data.password);
@@ -66,35 +38,45 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSubmit }) => {
   };
 
   return (
-    <div className="flex flex-col gap-4 border-y border-dashed border-border py-4">
-      <h3 className="text-sm font-semibold text-muted-foreground text-start">
+    <div className="flex flex-col gap-4">
+      <h3 className="text-lg font-semibold text-muted-foreground text-center">
         Insira suas credenciais do Ponto
       </h3>
-      <form onSubmit={handleSubmit(handleFormSubmit)} className="flex flex-col gap-4">
-        <FormField
-          type="text"
-          placeholder="Usuário"
-          disabled={isSubmitting}
-          registerProps={register("username")}
-          errorMessage={errors.username?.message}
-        />
-        <FormField
-          type="password"
-          placeholder="Senha"
-          disabled={isSubmitting}
-          registerProps={register("password")}
-          errorMessage={errors.password?.message}
-        />
-        <Button type="submit" variant="secondary" disabled={isSubmitting} className="p-4 text-xl cursor-pointer">
+      <form onSubmit={handleSubmit(onSubmitForm)} className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <Input
+            type="text"
+            placeholder="Usuário"
+            disabled={isSubmitting}
+            className="p-8 text-lg"
+            {...register("username")}
+          />
+          {errors.username && (
+            <span className="text-sm text-red-500 text-start">{errors.username.message}</span>
+          )}
+        </div>
+        <div className="flex flex-col gap-1">
+          <Input
+            type="password"
+            placeholder="Senha"
+            disabled={isSubmitting}
+            className="p-8 text-lg"
+            {...register("password")}
+          />
+          {errors.password && (
+            <span className="text-sm text-red-500 text-start">{errors.password.message}</span>
+          )}
+        </div>
+        <Button type="submit" disabled={isSubmitting} className="p-8 text-xl cursor-pointer">
           {isSubmitting ? (
             <>
-              Entrando...
-              <Loader2 className="h-8 w-8 animate-spin" />
+            Entrando...
+            <Loader2 className="h-8 w-8 animate-spin" />
             </>
           ) : (
             <>
-              Entrar
-              <LogIn className="h-8 w-8" />
+            Entrar
+            <LogIn className="h-8 w-8" />
             </>
           )}
         </Button>

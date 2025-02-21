@@ -9,68 +9,49 @@ import SlackMessageView from "./components/SlackMessageView";
 import PontoSlackView from "./components/PontoSlackView";
 import Header from "./components/Header";
 
-// Configurações padrão do QueryClient
-const DEFAULT_QUERY_CONFIG = {
-  retry: 1,
-  retryDelay: 1000,
-  enabled: true
-};
-
-const QUERY_CLIENT_CONFIG = {
-  defaultOptions: {
-    queries: {
-      ...DEFAULT_QUERY_CONFIG,
-      refetchOnWindowFocus: true,
-      refetchOnReconnect: false,
-      staleTime: 10000,
-      gcTime: 0
+const queryClient = new QueryClient({
+    defaultOptions: {
+        queries: {
+            retry: 1, // Limita o número de retentativas
+            retryDelay: 1000, // Espera 1 segundo entre as tentativas
+            refetchOnWindowFocus: true,
+            refetchOnReconnect: false, // Não refetch ao reconectar
+            staleTime: 5000, // 5 segundos
+            gcTime: 0, // Remove do cache imediatamente quando não estiver em uso
+            enabled: true, // Habilita queries por padrão
+        },
+        mutations: {
+            retry: 1, // Limita o número de retentativas para mutations
+            retryDelay: 1000, // Espera 1 segundo entre as tentativas
+        },
     },
-    mutations: {
-      ...DEFAULT_QUERY_CONFIG
-    }
-  }
-};
+});
 
-// Criação do QueryClient com as configurações
-const queryClient = new QueryClient(QUERY_CLIENT_CONFIG);
-
-// Limpeza do cache ao fechar
-window.addEventListener('beforeunload', () => queryClient.clear());
-
-// Definição das rotas da aplicação
-const APP_ROUTES = [
-  { path: "/", element: <Home /> },
-  { path: "/dashboard", element: <Dashboard /> },
-  { path: "/ponto", element: <PontoView /> },
-  { path: "/ponto/slack", element: <PontoSlackView /> },
-  { path: "/slack/status", element: <SlackStatusView /> },
-  { path: "/slack/message", element: <SlackMessageView /> },
-  { path: "*", element: <Navigate to="/" replace /> }
-];
-
-// Componente de Layout que envolve as rotas
-const AppLayout = ({ children }: { children: React.ReactNode }) => (
-  <main id='app' className="p-4 flex flex-col gap-4 border-4 max-h-screen overflow-hidden">
-    <Header />
-    {children}
-    <AlertContainer />
-  </main>
-);
+// Limpa todas as queries quando a janela é fechada
+window.addEventListener('beforeunload', () => {
+    queryClient.clear();
+});
 
 function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AppLayout>
-          <Routes>
-            {APP_ROUTES.map(({ path, element }) => (
-              <Route key={path} path={path} element={element} />
-            ))}
-          </Routes>
-        </AppLayout>
-      </BrowserRouter>
-    </QueryClientProvider>
-  );
+    return (
+        <QueryClientProvider client={queryClient}>
+            <BrowserRouter>
+                <main id='app' className="p-4 flex flex-col gap-4 border-4 max-h-screen overflow-hidden">
+                    <Header />
+                    <Routes>
+                        <Route path="/" element={<Home />} />
+                        <Route path="/dashboard" element={<Dashboard />} />
+                        <Route path="/ponto" element={<PontoView />} />
+                        <Route path="/ponto/slack" element={<PontoSlackView />} />
+                        <Route path="/slack/status" element={<SlackStatusView />} />
+                        <Route path="/slack/message" element={<SlackMessageView />} />
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                    <AlertContainer />
+                </main>
+            </BrowserRouter>
+        </QueryClientProvider>
+    )
 }
 
-export default App;
+export default App
