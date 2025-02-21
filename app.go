@@ -115,7 +115,7 @@ func (a *App) initializeAuthModule() error {
 
 	authModule, err := auth.NewModule(auth.Config{
 		Headless: true,
-		UseMock:  true,
+		UseMock:  false,
 		Context:  a.ctx,
 	})
 	if err != nil {
@@ -133,7 +133,7 @@ func (a *App) initializePontoModule() error {
 	}
 
 	a.pontoModule = clockin.NewModule(a.authModule.GetContext(), clockin.Config{
-		UseMock: true,
+		UseMock: false,
 	})
 	return nil
 }
