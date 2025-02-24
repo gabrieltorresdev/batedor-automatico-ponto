@@ -10,7 +10,6 @@ export function useSlackStatus() {
     const queryClient = useQueryClient();
     const addNotification = useNotifyStore((state) => state.addNotification);
 
-    // Query para obter o status atual
     const { 
         data: currentStatus,
         isLoading: isLoadingStatus,
@@ -18,13 +17,12 @@ export function useSlackStatus() {
     } = useQuery({
         queryKey: [SLACK_STATUS_KEY],
         queryFn: () => slackService.obterStatusAtual(),
-        refetchInterval: 10000, // Refetch a cada 10 segundos
-        retry: 1, // Limita o número de retentativas
-        retryDelay: 1000, // Espera 1 segundo entre as tentativas
-        gcTime: 0, // Remove do cache imediatamente quando não estiver em uso
+        refetchInterval: 10000,
+        retry: 1,
+        retryDelay: 1000,
+        gcTime: 0,
     });
 
-    // Mutation para definir um novo status
     const { mutate: definirStatus, isPending: isSettingStatus } = useMutation({
         mutationFn: (novoStatus: Status) => slackService.definirStatus(novoStatus),
         onSuccess: (_, novoStatus) => {
@@ -39,7 +37,6 @@ export function useSlackStatus() {
         }
     });
 
-    // Mutation para limpar o status
     const { mutate: limparStatus, isPending: isClearingStatus } = useMutation({
         mutationFn: () => slackService.limparStatus(),
         onSuccess: () => {

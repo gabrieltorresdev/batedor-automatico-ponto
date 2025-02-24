@@ -40,7 +40,11 @@ export const usePontoStore = create<PontoStore>((set) => ({
     obterOperacoesDisponiveis: async () => {
         set({ isLoading: true });
         try {
-            return await ObterOperacoesDisponiveis();
+            const operacoes = await ObterOperacoesDisponiveis();
+            return operacoes || [];
+        } catch (error) {
+            console.error('Erro ao obter operações:', error);
+            return [];
         } finally {
             set({ isLoading: false });
         }
