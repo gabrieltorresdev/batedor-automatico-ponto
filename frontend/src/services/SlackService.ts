@@ -15,7 +15,7 @@ export const StatusHomeOffice: Status = {
 
 export const StatusAlmoco: Status = {
     emoji: '🍽️',
-    mensagem: 'Almoço'
+    mensagem: 'Almoçando'
 };
 
 export const StatusFimExpediente: Status = {

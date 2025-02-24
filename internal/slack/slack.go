@@ -12,6 +12,7 @@ import (
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 const (
@@ -349,6 +350,14 @@ func (s *SessaoSlack) EnviarMensagem(msg string) error {
 	})
 }
 
+// limparEstadoInicial limpa qualquer modal ou menu aberto no Slack
+func (s *SessaoSlack) limparEstadoInicial(ctx context.Context) error {
+	return chromedp.Run(ctx,
+		// Pressiona ESC para fechar qualquer modal aberto
+		chromedp.KeyEvent(kb.Escape),
+	)
+}
+
 // DefinirStatus define o status do usuário no Slack
 func (s *SessaoSlack) DefinirStatus(status Status) error {
 	s.mu.Lock()         // Adquire o mutex
@@ -360,6 +369,11 @@ func (s *SessaoSlack) DefinirStatus(status Status) error {
 	// Primeiro valida a sessão
 	if err := s.validarSessaoSomente(); err != nil {
 		return fmt.Errorf("erro ao validar sessão: %w", err)
+	}
+
+	// Limpa o estado inicial
+	if err := s.limparEstadoInicial(ctx); err != nil {
+		return fmt.Errorf("erro ao limpar estado inicial: %w", err)
 	}
 
 	// Abre o menu de status
@@ -473,6 +487,11 @@ func (s *SessaoSlack) LimparStatus() error {
 		return fmt.Errorf("erro ao validar sessão: %w", err)
 	}
 
+	// Limpa o estado inicial
+	if err := s.limparEstadoInicial(ctx); err != nil {
+		return fmt.Errorf("erro ao limpar estado inicial: %w", err)
+	}
+
 	// Abre o menu de status
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`button[data-qa="user-button"]`),
@@ -539,6 +558,11 @@ func (s *SessaoSlack) ObterStatusAtual() (*Status, error) {
 	// Primeiro valida a sessão
 	if err := s.validarSessaoSomente(); err != nil {
 		return nil, fmt.Errorf("erro ao validar sessão: %w", err)
+	}
+
+	// Limpa o estado inicial
+	if err := s.limparEstadoInicial(ctx); err != nil {
+		return nil, fmt.Errorf("erro ao limpar estado inicial: %w", err)
 	}
 
 	var status *Status
