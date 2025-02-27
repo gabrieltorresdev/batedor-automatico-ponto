@@ -134,9 +134,9 @@ func (a *AuthSession) Login(creds Credentials) error {
 	}
 
 	// Aguarda um pouco para a página processar o login
-	// if err := chromedp.Run(a.ctx, chromedp.Sleep(2*time.Second)); err != nil {
-	// 	return err
-	// }
+	if err := chromedp.Run(a.ctx, chromedp.Sleep(2*time.Second)); err != nil {
+		return err
+	}
 
 	// Terceiro passo: Verificar se há mensagem de erro
 	hasInvalidCredentials, err := a.checkForLoginErrors()

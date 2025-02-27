@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/chromedp/cdproto/network"
@@ -20,11 +19,12 @@ const (
 	slackDMURL       = "https://app.slack.com/client/TSAD5P1GB/C010LNL7KS9"
 	slackRedirectURL = "https://fintools-ot.slack.com/ssb/redirect"
 
-	tempoLimiteAuth = 2 * time.Minute
-	maxTentativas   = 3
-	atrasoTentativa = time.Second
-	arquivoCookies  = "slack_cookies.json"
-	diretorioConfig = ".batedorponto"
+	tempoLimiteOperacao = 30 * time.Second
+	tempoLimiteAuth     = 2 * time.Minute
+	maxTentativas       = 3
+	atrasoTentativa     = time.Second
+	arquivoCookies      = "slack_cookies.json"
+	diretorioConfig     = ".batedorponto"
 )
 
 type Navegador interface {
@@ -42,7 +42,6 @@ type SessaoSlack struct {
 	ctx       context.Context
 	cancelar  context.CancelFunc
 	navegador Navegador
-	mu        sync.Mutex // Mutex para controle de concorrência
 }
 
 type NavegadorChrome struct {
@@ -231,7 +230,7 @@ func (s *SessaoSlack) eSessaoValida(ctx context.Context) bool {
 }
 
 func (s *SessaoSlack) validarSessaoSomente() error {
-	ctx, cancelar := context.WithTimeout(s.ctx, 10*time.Second)
+	ctx, cancelar := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancelar()
 
 	// Primeiro verifica se já estamos em uma página válida do Slack
@@ -252,7 +251,7 @@ func (s *SessaoSlack) validarSessaoSomente() error {
 }
 
 func (s *SessaoSlack) navegarParaDM() error {
-	ctx, cancelar := context.WithTimeout(s.ctx, 10*time.Second)
+	ctx, cancelar := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancelar()
 
 	// Verifica se já estamos na DM
@@ -284,6 +283,9 @@ func (s *SessaoSlack) Autenticar() error {
 		return fmt.Errorf("erro no login: %w", err)
 	}
 
+	// Aguarda um pouco após o login para garantir que os cookies foram salvos
+	time.Sleep(2 * time.Second)
+
 	return nil
 }
 
@@ -301,6 +303,7 @@ func (s *SessaoSlack) aguardarLogin(ctx context.Context) error {
 			if strings.Contains(url, slackRedirectURL) {
 				return nil
 			}
+			time.Sleep(500 * time.Millisecond)
 		}
 	}
 }
@@ -320,7 +323,7 @@ func (s *SessaoSlack) EnviarMensagem(msg string) error {
 		return fmt.Errorf("mensagem vazia")
 	}
 
-	ctx, cancelar := context.WithTimeout(s.ctx, 10*time.Second)
+	ctx, cancelar := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancelar()
 
 	// Verifica se a sessão está válida sem navegar
@@ -360,10 +363,7 @@ func (s *SessaoSlack) limparEstadoInicial(ctx context.Context) error {
 
 // DefinirStatus define o status do usuário no Slack
 func (s *SessaoSlack) DefinirStatus(status Status) error {
-	s.mu.Lock()         // Adquire o mutex
-	defer s.mu.Unlock() // Libera o mutex ao final da função
-
-	ctx, cancelar := context.WithTimeout(s.ctx, 10*time.Second)
+	ctx, cancelar := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancelar()
 
 	// Primeiro valida a sessão
@@ -386,7 +386,7 @@ func (s *SessaoSlack) DefinirStatus(status Status) error {
 		return fmt.Errorf("erro ao abrir menu de status: %w", err)
 	}
 
-	// Limpa o status atual
+	// Aguarda o modal carregar e limpa o status atual
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`
 			(() => {
@@ -396,7 +396,7 @@ func (s *SessaoSlack) DefinirStatus(status Status) error {
 			})()
 		`, nil),
 	); err != nil {
-		return fmt.Errorf("erro ao limpar status atual: %w", err)
+		fmt.Printf("\n⚠️  Aviso: não foi possível limpar status atual: %v\n", err)
 	}
 
 	// Tenta encontrar e clicar no status pré-configurado
@@ -435,33 +435,17 @@ func (s *SessaoSlack) DefinirStatus(status Status) error {
 	)
 
 	if err != nil {
-		// Tenta recarregar a página e definir o status novamente, com limite de tentativas
-		maxTentativasReload := 3
-		for tentativa := 1; tentativa <= maxTentativasReload; tentativa++ {
-			fmt.Printf("\n⚠️  Tentando recarregar a página do Slack (tentativa %d/%d)...\n", tentativa, maxTentativasReload)
+		return fmt.Errorf("erro ao salvar status: %w", err)
+	}
 
-			// Adiciona um delay crescente entre as tentativas
-			time.Sleep(time.Duration(tentativa) * time.Second)
+	// Aguarda o modal fechar e verifica se o status foi alterado
+	err = chromedp.Run(ctx,
+		chromedp.Sleep(1*time.Second), // Dá um tempo para o modal fechar
+		chromedp.WaitNotPresent(`div.p-custom_status_modal`),
+	)
 
-			if err := chromedp.Run(ctx, chromedp.Navigate(slackBaseURL)); err != nil {
-				if tentativa == maxTentativasReload {
-					return fmt.Errorf("erro ao recarregar a página do Slack após %d tentativas: %w", maxTentativasReload, err)
-				}
-				continue
-			}
-
-			// Tenta definir o status novamente
-			if err := s.DefinirStatus(status); err != nil {
-				if tentativa == maxTentativasReload {
-					return fmt.Errorf("erro ao definir status após %d tentativas: %w", maxTentativasReload, err)
-				}
-				continue
-			}
-
-			// Se chegou aqui, significa que conseguiu definir o status
-			return nil
-		}
-		return fmt.Errorf("erro ao definir status após todas as tentativas")
+	if err != nil {
+		return fmt.Errorf("erro ao confirmar salvamento do status: %w", err)
 	}
 
 	// Verifica se o status foi realmente alterado
@@ -479,7 +463,7 @@ func (s *SessaoSlack) DefinirStatus(status Status) error {
 
 // LimparStatus limpa o status do usuário no Slack
 func (s *SessaoSlack) LimparStatus() error {
-	ctx, cancelar := context.WithTimeout(s.ctx, 10*time.Second)
+	ctx, cancelar := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancelar()
 
 	// Primeiro valida a sessão
@@ -530,6 +514,7 @@ func (s *SessaoSlack) LimparStatus() error {
 
 	// Aguarda o modal fechar e verifica se o status foi alterado
 	err = chromedp.Run(ctx,
+		chromedp.Sleep(1*time.Second), // Dá um tempo para o modal fechar
 		chromedp.WaitNotPresent(`div.p-custom_status_modal`),
 	)
 
@@ -552,7 +537,7 @@ func (s *SessaoSlack) LimparStatus() error {
 
 // ObterStatusAtual obtém o status atual do usuário no Slack
 func (s *SessaoSlack) ObterStatusAtual() (*Status, error) {
-	ctx, cancelar := context.WithTimeout(s.ctx, 10*time.Second)
+	ctx, cancelar := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancelar()
 
 	// Primeiro valida a sessão
@@ -566,74 +551,77 @@ func (s *SessaoSlack) ObterStatusAtual() (*Status, error) {
 	}
 
 	var status *Status
-
-	// Abre o menu de status
-	if err := chromedp.Run(ctx,
-		chromedp.Click(`button[data-qa="user-button"]`),
-		chromedp.WaitVisible(`button[data-qa="main-menu-custom-status-item"]`),
-		chromedp.Click(`button[data-qa="main-menu-custom-status-item"]`),
-		chromedp.WaitVisible(`div.p-custom_status_modal`),
-	); err != nil {
-		return nil, fmt.Errorf("erro ao abrir menu de status: %w", err)
-	}
-
-	// Obtém o status atual
-	type resultadoStatus struct {
-		TemStatus bool   `json:"hasStatus"`
-		Emoji     string `json:"emoji"`
-		Mensagem  string `json:"message"`
-	}
-	var resultado resultadoStatus
-
-	err := chromedp.Run(ctx, chromedp.Evaluate(`
-		(() => {
-			// Função para extrair texto limpo
-			function extractCleanText(element) {
-				if (!element) return '';
-				// Remove espaços extras e quebras de linha
-				return element.textContent.replace(/\s+/g, ' ').trim();
-			}
-
-			// Busca o texto do status
-			const statusInput = document.querySelector('div[data-qa="custom_status_input_body"]');
-			const statusText = statusInput ? statusInput.querySelector('.ql-editor p') : null;
-			const message = extractCleanText(statusText);
-
-			// Busca o emoji
-			const emojiImg = document.querySelector('.p_custom_status_modal__input_emoji_picker img.c-emoji');
-			if (!emojiImg || !message) {
-				return { hasStatus: false };
-			}
-
-			// Extrai o código do emoji
-			const emojiAlt = emojiImg.alt || '';
-			const emoji = emojiAlt.replace(/:/g, '');
-
-			return {
-				hasStatus: true,
-				emoji: ':' + emoji + ':',
-				message: message
-			};
-		})()
-	`, &resultado))
-
-	if err != nil {
-		return nil, fmt.Errorf("erro ao obter status: %w", err)
-	}
-
-	// Fecha o modal
-	if err := chromedp.Run(ctx,
-		chromedp.Click(`button[data-qa="sk_close_modal_button"]`),
-	); err != nil {
-		return nil, fmt.Errorf("erro ao fechar modal: %w", err)
-	}
-
-	if resultado.TemStatus {
-		status = &Status{
-			Emoji:    resultado.Emoji,
-			Mensagem: resultado.Mensagem,
+	err := s.tentarNovamente(func() error {
+		// Abre o menu de status
+		if err := chromedp.Run(ctx,
+			chromedp.Click(`button[data-qa="user-button"]`),
+			chromedp.WaitVisible(`button[data-qa="main-menu-custom-status-item"]`),
+			chromedp.Click(`button[data-qa="main-menu-custom-status-item"]`),
+			chromedp.WaitVisible(`div.p-custom_status_modal`),
+		); err != nil {
+			return fmt.Errorf("erro ao abrir menu de status: %w", err)
 		}
-	}
 
-	return status, nil
+		// Obtém o status atual
+		type resultadoStatus struct {
+			TemStatus bool   `json:"hasStatus"`
+			Emoji     string `json:"emoji"`
+			Mensagem  string `json:"message"`
+		}
+		var resultado resultadoStatus
+
+		err := chromedp.Run(ctx, chromedp.Evaluate(`
+			(() => {
+				// Função para extrair texto limpo
+				function extractCleanText(element) {
+					if (!element) return '';
+					// Remove espaços extras e quebras de linha
+					return element.textContent.replace(/\s+/g, ' ').trim();
+				}
+
+				// Busca o texto do status
+				const statusInput = document.querySelector('div[data-qa="custom_status_input_body"]');
+				const statusText = statusInput ? statusInput.querySelector('.ql-editor p') : null;
+				const message = extractCleanText(statusText);
+
+				// Busca o emoji
+				const emojiImg = document.querySelector('.p_custom_status_modal__input_emoji_picker img.c-emoji');
+				if (!emojiImg || !message) {
+					return { hasStatus: false };
+				}
+
+				// Extrai o código do emoji
+				const emojiAlt = emojiImg.alt || '';
+				const emoji = emojiAlt.replace(/:/g, '');
+
+				return {
+					hasStatus: true,
+					emoji: ':' + emoji + ':',
+					message: message
+				};
+			})()
+		`, &resultado))
+
+		if err != nil {
+			return fmt.Errorf("erro ao obter status: %w", err)
+		}
+
+		// Fecha o modal
+		if err := chromedp.Run(ctx,
+			chromedp.Click(`button[data-qa="sk_close_modal_button"]`),
+		); err != nil {
+			return fmt.Errorf("erro ao fechar modal: %w", err)
+		}
+
+		if resultado.TemStatus {
+			status = &Status{
+				Emoji:    resultado.Emoji,
+				Mensagem: resultado.Mensagem,
+			}
+		}
+
+		return nil
+	})
+
+	return status, err
 }

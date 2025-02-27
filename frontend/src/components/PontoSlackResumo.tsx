@@ -13,7 +13,6 @@ import * as z from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { pontoService } from "@/services/PontoService";
 import React from "react";
-import { useNotifyStore } from "@/store/notifyStore";
 
 interface PontoSlackResumoProps {
   onConfirm: (dados: { operacao: string | number; status: Status; mensagem: string }) => Promise<void>;
@@ -41,7 +40,6 @@ export default function PontoSlackResumo({ onConfirm, onCancel }: PontoSlackResu
   const [operacoes, setOperacoes] = useState<Array<string | number>>([]);
   const [mensagensDisponiveis, setMensagensDisponiveis] = useState<string[]>([]);
   const pontoStore = usePontoStore();
-  const addNotification = useNotifyStore((state) => state.addNotification);
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: { localizacao: "", operacao: "", status: "", mensagem: "" },
@@ -67,33 +65,23 @@ export default function PontoSlackResumo({ onConfirm, onCancel }: PontoSlackResu
 
     setIsLoadingOperacoes(true);
     try {
-      // Seleciona a localização e aguarda as operações ficarem disponíveis
       await pontoStore.selecionarLocalizacao(loc);
-      
       const novaLocalizacao = await pontoStore.obterLocalizacaoAtual();
       form.setValue("localizacao", value, { shouldValidate: true });
-      
       const ops = await pontoStore.obterOperacoesDisponiveis();
-      const operacoesDisponiveis = ops || [];
-      setOperacoes(operacoesDisponiveis);
+      setOperacoes(ops);
 
-      if (operacoesDisponiveis.length > 0) {
-        const primeiraOperacao = operacoesDisponiveis[0].toString();
+      if (ops.length > 0) {
+        const primeiraOperacao = ops[0].toString();
         form.setValue("operacao", primeiraOperacao);
         atualizarStatusEMensagens(primeiraOperacao, novaLocalizacao);
       } else {
         form.setValue("operacao", "");
         form.setValue("status", "");
         setMensagensDisponiveis([]);
-        addNotification("Nenhuma operação disponível para esta localização", "warning");
       }
     } catch (error) {
       console.error("Erro ao atualizar localização:", error);
-      addNotification("Erro ao carregar operações. Por favor, tente novamente.", "error");
-      setOperacoes([]);
-      form.setValue("operacao", "");
-      form.setValue("status", "");
-      setMensagensDisponiveis([]);
     } finally {
       setIsLoadingOperacoes(false);
     }
@@ -126,39 +114,19 @@ export default function PontoSlackResumo({ onConfirm, onCancel }: PontoSlackResu
         ]);
         setLocalizacoes(locs);
         const localizacaoAtual = locs.find((l) => l.Nome === locAtual);
-        
         if (localizacaoAtual) {
           form.setValue("localizacao", localizacaoAtual.Valor, { shouldValidate: true });
           setIsLoadingOperacoes(true);
-          try {
-            // Seleciona a localização e aguarda as operações ficarem disponíveis
-            await pontoStore.selecionarLocalizacao(localizacaoAtual);
-            
-            // Obtém as operações
-            const ops = await pontoStore.obterOperacoesDisponiveis();
-            const operacoesDisponiveis = ops || [];
-            setOperacoes(operacoesDisponiveis);
-            
-            if (operacoesDisponiveis.length > 0) {
-              const primeiraOperacao = operacoesDisponiveis[0].toString();
-              form.setValue("operacao", primeiraOperacao, { shouldValidate: true });
-              atualizarStatusEMensagens(primeiraOperacao, locAtual);
-            } else {
-              addNotification("Selecione uma localização para ver as operações disponíveis", "info");
-            }
-          } catch (error) {
-            console.error("Erro ao carregar operações:", error);
-            addNotification("Erro ao carregar operações. Por favor, selecione uma localização.", "warning");
-          } finally {
-            setIsLoadingOperacoes(false);
+          const ops = await pontoStore.obterOperacoesDisponiveis();
+          setOperacoes(ops);
+          if (ops.length > 0) {
+            const primeiraOperacao = ops[0];
+            form.setValue("operacao", primeiraOperacao.toString(), { shouldValidate: true });
+            atualizarStatusEMensagens(primeiraOperacao, locAtual);
           }
-        } else if (locs.length > 0) {
-          // Se não tem localização atual mas tem localizações disponíveis
-          addNotification("Selecione uma localização para começar", "info");
         }
       } catch (error) {
         console.error("Erro ao carregar dados:", error);
-        addNotification("Erro ao carregar dados iniciais. Por favor, recarregue a página.", "error");
       } finally {
         setIsLoading(false);
         setIsLoadingOperacoes(false);
@@ -209,7 +177,7 @@ export default function PontoSlackResumo({ onConfirm, onCancel }: PontoSlackResu
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-xs font-medium text-muted-foreground">Operação</FormLabel>
-                <Select value={field.value} onValueChange={handleOperacaoChange} disabled={isLoadingOperacoes || !form.getValues("localizacao")}>
+                <Select value={field.value} onValueChange={handleOperacaoChange} disabled={isLoadingOperacoes || !operacoes.length}>
                   <FormControl>
                     <SelectTrigger className="h-8 text-xs">
                       {isLoadingOperacoes ? (
@@ -217,8 +185,6 @@ export default function PontoSlackResumo({ onConfirm, onCancel }: PontoSlackResu
                           <Loader2 className="h-3 w-3 animate-spin" />
                           <span>Carregando...</span>
                         </div>
-                      ) : !form.getValues("localizacao") ? (
-                        <span className="text-muted-foreground">Selecione uma localização primeiro</span>
                       ) : (
                         <SelectValue placeholder="Selecione">
                           {field.value && pontoService.getOperacaoDisplay(field.value)}
