@@ -133,13 +133,12 @@ func (m *MockPonto) ExecutarOperacao(operacao TipoOperacao) error {
 	// Atualiza operações disponíveis após executar uma operação
 	m.atualizarOperacoesDisponiveis()
 
-	fmt.Printf("\n🕒 Mock: Operação '%s' executada com sucesso\n", operacao)
 	return nil
 }
 
 // Close is a no-op for the mock
 func (m *MockPonto) Close() {
-	fmt.Println("\n🔌 Mock: Conexão fechada")
+	// No-op
 }
 
 // atualizarOperacoesDisponiveis atualiza as operações disponíveis com base no horário

@@ -5,10 +5,8 @@ go 1.23
 toolchain go1.24.0
 
 require (
-	github.com/briandowns/spinner v1.23.2
 	github.com/chromedp/cdproto v0.0.0-20250120090109-d38428e4d9c8
 	github.com/chromedp/chromedp v0.12.1
-	github.com/fatih/color v1.7.0
 	github.com/joho/godotenv v1.5.1
 	github.com/manifoldco/promptui v0.9.0
 	github.com/wailsapp/wails/v2 v2.10.0
@@ -47,6 +45,5 @@ require (
 	golang.org/x/crypto v0.33.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/term v0.29.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 )

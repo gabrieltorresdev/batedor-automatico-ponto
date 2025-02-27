@@ -22,10 +22,6 @@ export function ExecutarOperacao(arg1) {
   return window['go']['main']['App']['ExecutarOperacao'](arg1);
 }
 
-export function InicializarSlack() {
-  return window['go']['main']['App']['InicializarSlack']();
-}
-
 export function LimparStatus() {
   return window['go']['main']['App']['LimparStatus']();
 }
@@ -48,10 +44,6 @@ export function ObterOperacoesDisponiveis() {
 
 export function ObterStatusAtual() {
   return window['go']['main']['App']['ObterStatusAtual']();
-}
-
-export function PrepararMensagem(arg1) {
-  return window['go']['main']['App']['PrepararMensagem'](arg1);
 }
 
 export function SalvarCredenciais(arg1) {

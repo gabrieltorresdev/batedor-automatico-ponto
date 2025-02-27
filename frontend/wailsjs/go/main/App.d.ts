@@ -14,8 +14,6 @@ export function EnviarMensagem(arg1:string):Promise<void>;
 
 export function ExecutarOperacao(arg1:clockin.TipoOperacao):Promise<void>;
 
-export function InicializarSlack():Promise<void>;
-
 export function LimparStatus():Promise<void>;
 
 export function LoginPonto(arg1:string,arg2:string):Promise<void>;
@@ -27,8 +25,6 @@ export function ObterLocalizacoesDisponiveis():Promise<Array<clockin.Localizacao
 export function ObterOperacoesDisponiveis():Promise<Array<clockin.TipoOperacao>>;
 
 export function ObterStatusAtual():Promise<slack.Status>;
-
-export function PrepararMensagem(arg1:string):Promise<boolean>;
 
 export function SalvarCredenciais(arg1:main.Credentials):Promise<void>;
 

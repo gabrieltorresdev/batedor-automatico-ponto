@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/manifoldco/promptui"
 )
 
 type TipoOperacao int
@@ -439,46 +438,11 @@ func (g *GerenciadorPonto) tratarModalIntervalo() error {
 		return nil
 	}
 
-	fmt.Printf("\n⏰ Intervalo Opcional Detectado\n%s\n", modalInfo.Conteudo)
-
-	prompt := promptui.Prompt{
-		Label:     "Deseja considerar este período como intervalo opcional",
-		IsConfirm: true,
+	// Retorna um erro específico para ser tratado pela interface
+	return &ErroPonto{
+		Tipo:     "intervalo_opcional",
+		Mensagem: modalInfo.Conteudo,
 	}
-
-	resultado, err := prompt.Run()
-	if err != nil {
-		if err == promptui.ErrAbort {
-			fmt.Println("\n✖ Operação cancelada")
-			return nil
-		}
-		return &ErroPonto{
-			Tipo:     "modal",
-			Mensagem: "erro na confirmação do intervalo",
-			Causa:    err,
-		}
-	}
-
-	seletor := `button.ui-button span`
-	if resultado == "y" || resultado == "Y" {
-		seletor += `:contains("Sim")`
-	} else {
-		seletor += `:contains("Não")`
-	}
-
-	err = chromedp.Run(g.ctx,
-		chromedp.Click(seletor, chromedp.ByQuery),
-	)
-
-	if err != nil {
-		return &ErroPonto{
-			Tipo:     "modal",
-			Mensagem: "falha ao responder modal",
-			Causa:    err,
-		}
-	}
-
-	return chromedp.Run(g.ctx, g.aguardarAjax())
 }
 
 func (g *GerenciadorPonto) validarSessao() error {

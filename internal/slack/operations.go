@@ -165,18 +165,6 @@ func (o *GerenciadorOperacoes) EnviarMensagem(msg string) error {
 	})
 }
 
-// PrepararMensagem implementa a interface GerenciadorMensagem
-func (o *GerenciadorOperacoes) PrepararMensagem(tipoMensagem string) (bool, string, error) {
-	var confirmado bool
-	var msg string
-	err := o.OperacaoMensagem(func(s *SessaoSlack) error {
-		var err error
-		confirmado, msg, err = s.PrepararMensagem(tipoMensagem)
-		return err
-	})
-	return confirmado, msg, err
-}
-
 // ValidarSessao implementa a interface GerenciadorSessao
 func (o *GerenciadorOperacoes) ValidarSessao() error {
 	sessao, err := o.getSessao()

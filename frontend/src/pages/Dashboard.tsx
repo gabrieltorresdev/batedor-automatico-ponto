@@ -36,25 +36,25 @@ export default function Dashboard() {
   } = useMainMenu();
   const {
     isAuthenticated: isSlackAuthenticated,
-    configureSlack,
     isLoading: isSlackLoading,
+    verifySlackSession
   } = useSlackStore();
-
-  async function handleConfigureSlack() {
-    try {
-      await configureSlack();
-      await refreshActions();
-      addNotification("Slack configurado!", "success");
-    } catch (error) {
-      addNotification("Erro ao configurar Slack", "error");
-    }
-  }
 
   async function handleReconfigurePonto() {
     try {
       navigate("/");
     } catch (error) {
       addNotification("Erro ao reconfigurar ponto", "error");
+    }
+  }
+
+  async function handleRetrySlack() {
+    try {
+      await verifySlackSession();
+      await refreshActions();
+      addNotification("Slack reconectado!", "success");
+    } catch (error) {
+      addNotification("Erro ao conectar com Slack", "error");
     }
   }
 
@@ -107,10 +107,10 @@ export default function Dashboard() {
         <div className="border-y border-dashed border-border py-2">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-muted-foreground text-start">
-              É preciso autenticar no Slack para usar todas as funcionalidades
+              Slack não conectado. Algumas funcionalidades podem estar indisponíveis.
             </span>
             <Button
-              onClick={handleConfigureSlack}
+              onClick={handleRetrySlack}
               variant="outline"
               size="icon"
               disabled={isSlackLoading}
@@ -119,7 +119,7 @@ export default function Dashboard() {
               {isSlackLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <ExternalLink className="h-4 w-4" />
+                <RefreshCcw className="h-4 w-4" />
               )}
             </Button>
           </div>

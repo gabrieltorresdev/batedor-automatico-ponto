@@ -21,9 +21,6 @@ type GerenciadorStatus interface {
 type GerenciadorMensagem interface {
 	// EnviarMensagem envia uma mensagem para o canal configurado
 	EnviarMensagem(msg string) error
-
-	// PrepararMensagem prepara uma mensagem baseada no tipo
-	PrepararMensagem(tipoMensagem string) (bool, string, error)
 }
 
 // GerenciadorSessao manipula operações de sessão do Slack

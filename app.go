@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/gabrieltorresdev/batedor-automatico-ponto/internal/auth"
 	"github.com/gabrieltorresdev/batedor-automatico-ponto/internal/clockin"
@@ -38,7 +39,6 @@ type SlackService interface {
 	DefinirStatus(status slack.Status) error
 	LimparStatus() error
 	EnviarMensagem(mensagem string) error
-	PrepararMensagem(tipo string) (bool, string, error)
 	Close()
 }
 
@@ -62,6 +62,10 @@ func NewApp() *App {
 // startup is called when the app starts. The context is saved
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// Initialize modules concurrently
+	if err := a.inicializarModulosConcurrently(); err != nil {
+		fmt.Printf("Erro ao inicializar módulos: %v\n", err)
+	}
 }
 
 // shutdown is called at application termination
@@ -107,40 +111,105 @@ type SlackStatus struct {
 	Mensagem string
 }
 
-// initializeAuthModule initializes the auth module if not already initialized
-func (a *App) initializeAuthModule() error {
-	if a.authModule != nil {
-		return nil
-	}
-
-	authModule, err := auth.NewModule(auth.Config{
-		Headless: true,
-		UseMock:  false,
-		Context:  a.ctx,
-	})
-	if err != nil {
-		return fmt.Errorf("falha ao inicializar módulo de autenticação: %w", err)
-	}
-
-	a.authModule = authModule
-	return nil
-}
-
-// initializePontoModule initializes the ponto module using the auth context
-func (a *App) initializePontoModule() error {
+// initializeAuthEPonto initializes the auth and clock-in modules using a shared browser context
+func (a *App) initializeAuthEPonto() error {
 	if a.authModule == nil {
-		return fmt.Errorf("módulo de autenticação não inicializado")
+		// Initialize auth module
+		authModule, err := auth.NewModule(auth.Config{
+			Headless: true,
+			UseMock:  false,
+			Context:  a.ctx,
+		})
+		if err != nil {
+			return fmt.Errorf("falha ao inicializar módulo de autenticação: %w", err)
+		}
+		a.authModule = authModule
 	}
 
+	if a.authModule == nil {
+		return errors.New("módulo de autenticação não inicializado")
+	}
+
+	// Initialize ponto module with the browser context from the auth module
 	a.pontoModule = clockin.NewModule(a.authModule.GetContext(), clockin.Config{
 		UseMock: false,
 	})
+
+	return nil
+}
+
+// inicializarModulosConcurrently initializes the auth/ponto and slack modules concurrently
+func (a *App) inicializarModulosConcurrently() error {
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+
+	wg.Add(2)
+
+	// Goroutine for auth and ponto initialization
+	go func() {
+		defer wg.Done()
+		if err := a.initializeAuthEPonto(); err != nil {
+			errCh <- err
+		}
+	}()
+
+	// Goroutine for slack initialization
+	go func() {
+		defer wg.Done()
+		// The parameter true indicates using the already saved cookies: if not present, slack module will handle it
+		if err := a.initializeSlackModule(true); err != nil {
+			errCh <- err
+		}
+	}()
+
+	wg.Wait()
+	close(errCh)
+
+	if len(errCh) > 0 {
+		// Return the first error encountered
+		return <-errCh
+	}
+
+	return nil
+}
+
+// initializeSlackModule initializes the slack module
+func (a *App) initializeSlackModule(useCookies bool) error {
+	// If already initialized and useCookies is true, return
+	if a.slackModule != nil && useCookies {
+		return nil
+	}
+
+	// Create a new slack module with its own configuration
+	// Note: the slack module can have its own browser context if necessary, or share a context; adjust as desired
+	slackModule, err := slack.NewModulo(a.ctx, slack.Configuracao{
+		DiretorioConfig: a.configDir,
+		ModoSilencioso:  true,
+	})
+	if err != nil {
+		return fmt.Errorf("falha ao inicializar módulo do Slack: %w", err)
+	}
+
+	a.slackModule = slackModule
+
+	if useCookies {
+		if err := a.slackModule.CarregarCookies(a.configDir); err != nil {
+			// If failed to load cookies, attempt interactive authentication
+			if err := a.slackModule.Autenticar(); err != nil {
+				return fmt.Errorf("erro na autenticação do Slack: %w", err)
+			}
+			if err := a.slackModule.SalvarCookies(a.configDir); err != nil {
+				return fmt.Errorf("erro ao salvar cookies do Slack: %w", err)
+			}
+		}
+	}
+
 	return nil
 }
 
 // LoginPonto tenta fazer login no sistema
 func (a *App) LoginPonto(username string, password string) error {
-	if err := a.initializeAuthModule(); err != nil {
+	if err := a.initializeAuthEPonto(); err != nil {
 		return fmt.Errorf("erro ao inicializar módulo de autenticação: %w", err)
 	}
 
@@ -158,10 +227,6 @@ func (a *App) LoginPonto(username string, password string) error {
 			return loginErr
 		}
 		return fmt.Errorf("erro ao fazer login: %w", err)
-	}
-
-	if err := a.initializePontoModule(); err != nil {
-		return err
 	}
 
 	return a.SalvarCredenciais(&Credentials{
@@ -223,53 +288,6 @@ func (a *App) VerificarSessaoSlack() error {
 			return fmt.Errorf("erro ao carregar cookies de sessão do Slack: %w", err)
 		}
 		return a.slackModule.ValidarSessao()
-	}
-
-	return nil
-}
-
-func (a *App) initializeSlackModule(silencioso bool) error {
-	if a.slackModule != nil {
-		oldModule := a.slackModule
-		a.slackModule = nil
-		go oldModule.Close()
-	}
-
-	slackModule, err := slack.NewModulo(a.ctx, slack.Configuracao{
-		DiretorioConfig: a.configDir,
-		ModoSilencioso:  silencioso,
-	})
-
-	if err != nil {
-		return fmt.Errorf("erro ao inicializar módulo do Slack: %w", err)
-	}
-
-	a.slackModule = slackModule
-	return nil
-}
-
-// InicializarSlack inicia o processo de configuração do Slack
-func (a *App) InicializarSlack() error {
-	if err := a.initializeSlackModule(true); err != nil {
-		return err
-	}
-
-	if err := a.slackModule.CarregarCookies(a.configDir); err != nil {
-		fmt.Println("⚠️ Falha ao carregar cookies, iniciando autenticação...")
-
-		if err := a.initializeSlackModule(false); err != nil {
-			return err
-		}
-
-		if err := a.slackModule.Autenticar(); err != nil {
-			return fmt.Errorf("erro na autenticação do Slack: %w", err)
-		}
-
-		if err := a.slackModule.SalvarCookies(a.configDir); err != nil {
-			return fmt.Errorf("erro ao salvar cookies do Slack: %w", err)
-		}
-
-		return a.initializeSlackModule(true)
 	}
 
 	return nil
@@ -387,14 +405,6 @@ func (a *App) EnviarMensagem(mensagem string) error {
 	return a.slackModule.EnviarMensagem(mensagem)
 }
 
-// PrepararMensagem prepara uma mensagem baseada no tipo
-func (a *App) PrepararMensagem(tipoMensagem string) (bool, string, error) {
-	if a.slackModule == nil {
-		return false, "", fmt.Errorf("módulo Slack não inicializado")
-	}
-	return a.slackModule.PrepararMensagem(tipoMensagem)
-}
-
 // reinicializarModuloPonto reinicializa o módulo de ponto após uma queda de sessão
 func (a *App) reinicializarModuloPonto() error {
 	if a.authModule != nil {
@@ -420,16 +430,12 @@ func (a *App) reinicializarModuloPonto() error {
 		}
 	}()
 
-	if err := a.initializeAuthModule(); err != nil {
-		return fmt.Errorf("erro ao inicializar módulo de autenticação: %w", err)
+	if err := a.initializeAuthEPonto(); err != nil {
+		return fmt.Errorf("erro ao reinicializar módulo de autenticação e ponto: %w", err)
 	}
 
 	if err := a.authModule.Login(creds); err != nil {
 		return fmt.Errorf("erro ao fazer login: %w", err)
-	}
-
-	if err := a.initializePontoModule(); err != nil {
-		return fmt.Errorf("erro ao inicializar módulo de ponto: %w", err)
 	}
 
 	return nil

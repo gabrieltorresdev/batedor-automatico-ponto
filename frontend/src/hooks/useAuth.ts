@@ -12,14 +12,6 @@ export const useAuth = () => {
     const { verifySlackSession } = useSlackStore();
     const addNotification = useNotifyStore(state => state.addNotification);
 
-    const verificarSlack = async () => {
-        try {
-            await verifySlackSession();
-        } catch (error) {
-            console.debug('Slack não configurado:', error);
-        }
-    };
-
     const handleAuthError = (error: any, username?: string) => {
         const errorMessage = error?.message || error?.toString() || 'Erro desconhecido';
         console.debug('Erro de autenticação:', error);
@@ -29,7 +21,6 @@ export const useAuth = () => {
             if (username) {
                 setBlocked(username);
                 addNotification(errorMessage, 'warning');
-                verificarSlack();
                 navigate('/dashboard');
                 return true;
             }
@@ -42,7 +33,6 @@ export const useAuth = () => {
             setIsLoading(true);
             await LoginPonto(username, password);
             setAuthenticated(username);
-            verificarSlack();
             navigate('/dashboard');
         } catch (error) {
             if (!handleAuthError(error, username)) {
@@ -60,7 +50,11 @@ export const useAuth = () => {
         const verificarCredenciais = async () => {
             setIsLoading(true);
             try {
-                verificarSlack();
+                // Inicia verificação do Slack em paralelo
+                const slackPromise = verifySlackSession().catch(error => {
+                    console.debug('Erro ao verificar sessão do Slack:', error);
+                    // Não tratamos como erro crítico, apenas logamos
+                });
 
                 const credenciais = await CarregarCredenciais().catch(() => null);
                 if (!credenciais?.Username) {
@@ -70,6 +64,7 @@ export const useAuth = () => {
                 }
 
                 try {
+                    // Verifica credenciais do ponto
                     await VerificarCredenciaisSalvas();
                     console.debug('Credenciais verificadas com sucesso');
                     setAuthenticated(credenciais.Username);
@@ -80,6 +75,9 @@ export const useAuth = () => {
                         setUnauthenticated();
                     }
                 }
+
+                // Aguarda a verificação do Slack terminar
+                await slackPromise;
             } catch (error) {
                 console.debug('Erro fatal ao verificar credenciais:', error);
                 setUnauthenticated();

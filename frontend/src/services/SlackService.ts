@@ -1,4 +1,4 @@
-import { ObterStatusAtual, DefinirStatus, LimparStatus, EnviarMensagem, PrepararMensagem } from '../../wailsjs/go/main/App';
+import { ObterStatusAtual, DefinirStatus, LimparStatus, EnviarMensagem } from '../../wailsjs/go/main/App';
 import { Status } from '@/types/slack';
 import otLogo from '@/assets/images/ot.png';
 
@@ -106,9 +106,7 @@ class SlackService {
         if (mensagens.length === 0) {
             return { confirmado: false, mensagem: '' };
         }
-
-        const confirmado = await PrepararMensagem(tipo);
-        return { confirmado, mensagem: mensagens[0] };
+        return { confirmado: true, mensagem: mensagens[0] };
     }
 
     // Mensagens pré-definidas por tipo

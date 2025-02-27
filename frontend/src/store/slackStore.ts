@@ -1,12 +1,11 @@
 import { create } from 'zustand'
-import { InicializarSlack, VerificarSessaoSlack } from '../../wailsjs/go/main/App'
+import { VerificarSessaoSlack } from '../../wailsjs/go/main/App'
 
 interface SlackState {
     isInitialized: boolean
     isAuthenticated: boolean
     isLoading: boolean
     verifySlackSession: () => Promise<void>
-    configureSlack: () => Promise<void>
 }
 
 export const useSlackStore = create<SlackState>((set) => ({
@@ -17,29 +16,15 @@ export const useSlackStore = create<SlackState>((set) => ({
     verifySlackSession: async () => {
         set({ isLoading: true });
         try {
-            // Apenas verifica a sessão existente
+            // Verifica a sessão existente - agora parte da inicialização paralela
             await VerificarSessaoSlack();
             set({ isAuthenticated: true, isInitialized: true });
         } catch (err) {
             // Não é um erro crítico, apenas indica que não há sessão válida
+            // O backend tentará autenticar automaticamente se necessário
             set({ isAuthenticated: false, isInitialized: true });
             console.debug('Sessão do Slack não encontrada:', err);
-        } finally {
-            set({ isLoading: false });
-        }
-    },
-
-    configureSlack: async () => {
-        set({ isLoading: true });
-        try {
-            // Inicia processo de configuração interativa
-            await InicializarSlack();
-            // Após configuração, verifica se a sessão está válida
-            set({ isAuthenticated: true, isInitialized: true });
-        } catch (err) {
-            set({ isAuthenticated: false });
-            console.error('Erro ao configurar Slack:', err);
-            throw err;
+            throw err; // Propaga o erro para ser tratado pelo useAuth
         } finally {
             set({ isLoading: false });
         }
