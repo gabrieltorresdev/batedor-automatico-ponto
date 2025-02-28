@@ -1,49 +1,55 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { MainMenuAction, MainMenuActionType } from '@/types/ponto';
 import { DefaultMainMenuStrategy } from '@/services/DefaultMainMenuStrategy';
 import { useNotifyStore } from '@/store/notifyStore';
 import { useSlackStore } from '@/store/slackStore';
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error) || 'Erro desconhecido';
+
 export const useMainMenu = () => {
-    const [actions, setActions] = useState<MainMenuAction[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const addNotification = useNotifyStore((state) => state.addNotification);
-    const isSlackAuthenticated = useSlackStore((state) => state.isAuthenticated);
+  const [actions, setActions] = useState<MainMenuAction[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const addNotification = useNotifyStore((state) => state.addNotification);
+  const isSlackAuthenticated = useSlackStore((state) => state.isAuthenticated);
 
-    const strategy = new DefaultMainMenuStrategy();
+  const strategy = useMemo(() => new DefaultMainMenuStrategy(), []);
 
-    const loadActions = async () => {
-        try {
-            setIsLoading(true);
-            const menuActions = await strategy.getActions();
-            setActions(menuActions);
-        } catch (err) {
-            addNotification((err as Error).message || 'Erro ao carregar ações', 'error');
-        } finally {
-            setIsLoading(false);
-        }
-    };
+  const loadActions = useCallback(async (): Promise<void> => {
+    setIsLoading(true);
+    try {
+      const menuActions = await strategy.getActions();
+      setActions(menuActions);
+    } catch (error) {
+      addNotification(getErrorMessage(error) || 'Erro ao carregar ações', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [strategy, addNotification]);
 
-    const executeAction = async (type: MainMenuActionType): Promise<string | void> => {
-        try {
-            setIsLoading(true);
-            return await strategy.executeAction(type);
-        } catch (err) {
-            addNotification((err as Error).message || 'Erro ao executar ação', 'error');
-            throw err;
-        } finally {
-            setIsLoading(false);
-        }
-    };
+  const executeAction = useCallback(
+    async (type: MainMenuActionType): Promise<string | void> => {
+      setIsLoading(true);
+      try {
+        return await strategy.executeAction(type);
+      } catch (error) {
+        addNotification(getErrorMessage(error) || 'Erro ao executar ação', 'error');
+        throw error;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [strategy, addNotification]
+  );
 
-    useEffect(() => {
-        loadActions();
-    }, [isSlackAuthenticated]);
+  useEffect(() => {
+    loadActions();
+  }, [isSlackAuthenticated, loadActions]);
 
-    return {
-        actions,
-        isLoading,
-        executeAction,
-        refreshActions: loadActions
-    };
-}; 
+  return {
+    actions,
+    isLoading,
+    executeAction,
+    refreshActions: loadActions,
+  };
+};

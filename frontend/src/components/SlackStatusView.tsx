@@ -48,20 +48,24 @@ const StatusEmoji = ({ emoji }: { emoji: string }) => {
         return <img src={normalizedEmoji} alt="Status" className="w-5 h-5" />;
     }
     // Se for um emoji unicode
-    return <span className="text-lg">{normalizedEmoji}</span>;
+    return <span className="text-base">{normalizedEmoji}</span>;
 };
 
 const StatusCard = ({ status, onClick }: { status: Status; onClick?: () => void }) => (
     <div 
         onClick={onClick}
-        className={`flex h-12 items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
+        className={`flex h-12 items-center p-2 gap-2 rounded-lg transition-all duration-200 ${
             onClick ? 'hover:bg-accent cursor-pointer' : 'bg-card'
         }`}
     >
-        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-accent/10">
-            <StatusEmoji emoji={status.emoji} />
+        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-accent/10">
+            <div className="flex items-center justify-center">
+                <StatusEmoji emoji={status.emoji} />
+            </div>
         </div>
-        <span className="text-sm font-medium line-clamp-1 text-start">{status.mensagem}</span>
+        <span className="text-sm font-medium line-clamp-1 text-start">
+            {status.mensagem}
+        </span>
     </div>
 );
 

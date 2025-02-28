@@ -19,9 +19,9 @@ const (
 	slackDMURL       = "https://app.slack.com/client/TSAD5P1GB/C010LNL7KS9"
 	slackRedirectURL = "https://fintools-ot.slack.com/ssb/redirect"
 
-	tempoLimiteOperacao = 30 * time.Second
-	tempoLimiteAuth     = 2 * time.Minute
-	maxTentativas       = 3
+	tempoLimiteOperacao = 10 * time.Second
+	tempoLimiteAuth     = 5 * time.Minute
+	maxTentativas       = 1
 	atrasoTentativa     = time.Second
 	arquivoCookies      = "slack_cookies.json"
 	diretorioConfig     = ".batedorponto"
@@ -103,12 +103,14 @@ func obterOpcoesNavegador(modoSilencioso bool) []chromedp.ExecAllocatorOption {
 	return append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", modoSilencioso),
 		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("disable-extensions", true),
 		chromedp.Flag("disable-setuid-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.WindowSize(1280, 720),
-		chromedp.UserAgent("Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0.0.0"),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("no-first-run", true),
+		chromedp.Flag("no-default-browser-check", true),
+		chromedp.Flag("ignore-certificate-errors", true),
+		chromedp.Flag("disable-extensions", true),
+		chromedp.WindowSize(200, 200),
 	)
 }
 

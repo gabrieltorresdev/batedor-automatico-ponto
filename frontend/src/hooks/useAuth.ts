@@ -1,96 +1,118 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LoginPonto, VerificarCredenciaisSalvas, CarregarCredenciais } from '../../wailsjs/go/main/App';
 import { useAuthStore } from '@/store/authStore';
 import { useNotifyStore } from '@/store/notifyStore';
 import { useSlackStore } from '@/store/slackStore';
+import { initializationQueue } from '@/lib/initializationQueue';
+import { RuntimeError } from '@/lib/wailsRuntime';
 
-export const useAuth = () => {
-    const [isLoading, setIsLoading] = useState(true);
-    const navigate = useNavigate();
-    const { setAuthenticated, setBlocked, setUnauthenticated } = useAuthStore();
-    const { verifySlackSession } = useSlackStore();
-    const addNotification = useNotifyStore(state => state.addNotification);
+interface UseAuthReturn {
+  login: (username: string, password: string) => Promise<void>;
+  isLoading: boolean;
+  verifyCredentials: () => Promise<void>;
+}
 
-    const handleAuthError = (error: any, username?: string) => {
-        const errorMessage = error?.message || error?.toString() || 'Erro desconhecido';
-        console.debug('Erro de autenticação:', error);
+export const useAuth = (): UseAuthReturn => {
+  const hasInitialized = useRef(false);
+  const navigate = useNavigate();
+  const authStore = useAuthStore();
+  const slackStore = useSlackStore();
+  const addNotification = useNotifyStore(state => state.addNotification);
 
-        if (errorMessage.toLowerCase().includes('bloqueado') || 
-            errorMessage.toLowerCase().includes('intervalo')) {
-            if (username) {
-                setBlocked(username);
-                addNotification(errorMessage, 'warning');
-                navigate('/dashboard');
-                return true;
-            }
-        }
-        return false;
-    };
+  const verifySlack = async (): Promise<void> => {
+    if (slackStore.isInitialized || slackStore.isLoading) return;
+    await initializationQueue.enqueue(async () => {
+      await slackStore.verifySlackSession();
+    }, 'slack-verification');
+  };
 
-    const login = async (username: string, password: string) => {
+  const handleError = (error: unknown) => {
+    if (error instanceof RuntimeError) {
+      addNotification('Sistema indisponível. Tente novamente em instantes.', 'error');
+      return;
+    }
+
+    // Handle structured error response
+    if (typeof error === 'object' && error !== null) {
+      // Check if it's a JSON string in the error property
+      if (typeof (error as any).error === 'string') {
         try {
-            setIsLoading(true);
-            await LoginPonto(username, password);
-            setAuthenticated(username);
-            navigate('/dashboard');
-        } catch (error) {
-            if (!handleAuthError(error, username)) {
-                setUnauthenticated();
-                const errorMessage = (error as Error)?.message || 'Erro ao fazer login';
-                addNotification(errorMessage, 'error');
-                throw error;
-            }
-        } finally {
-            setIsLoading(false);
+          // Try to parse the error message as JSON
+          const errorObj = JSON.parse((error as any).error);
+          if (errorObj && errorObj.message) {
+            addNotification(errorObj.message, 'error');
+            return;
+          }
+        } catch (e) {
+          // Not a JSON string, use the error property directly
+          addNotification((error as any).error, 'error');
+          return;
         }
-    };
+      }
+      
+      // Direct object with message property
+      if ('message' in error) {
+        addNotification((error as { message: string }).message, 'error');
+        return;
+      }
+    }
 
-    useEffect(() => {
-        const verificarCredenciais = async () => {
-            setIsLoading(true);
-            try {
-                // Inicia verificação do Slack em paralelo
-                const slackPromise = verifySlackSession().catch(error => {
-                    console.debug('Erro ao verificar sessão do Slack:', error);
-                    // Não tratamos como erro crítico, apenas logamos
-                });
+    // If it's a string, show it directly
+    if (typeof error === 'string') {
+      addNotification(error, 'error');
+      return;
+    }
 
-                const credenciais = await CarregarCredenciais().catch(() => null);
-                if (!credenciais?.Username) {
-                    console.debug('Nenhuma credencial encontrada');
-                    setUnauthenticated();
-                    return;
-                }
+    // Error instance
+    if (error instanceof Error) {
+      addNotification(error.message, 'error');
+      return;
+    }
 
-                try {
-                    // Verifica credenciais do ponto
-                    await VerificarCredenciaisSalvas();
-                    console.debug('Credenciais verificadas com sucesso');
-                    setAuthenticated(credenciais.Username);
-                    navigate('/dashboard');
-                } catch (error) {
-                    console.debug('Erro ao verificar credenciais:', error);
-                    if (!handleAuthError(error, credenciais.Username)) {
-                        setUnauthenticated();
-                    }
-                }
+    // Last fallback for truly unknown errors
+    addNotification('Erro desconhecido. Tente novamente.', 'error');
+  };
 
-                // Aguarda a verificação do Slack terminar
-                await slackPromise;
-            } catch (error) {
-                console.debug('Erro fatal ao verificar credenciais:', error);
-                setUnauthenticated();
-            } finally {
-                setIsLoading(false);
-            }
-        };
+  const verifyCredentials = async (): Promise<void> => {
+    await initializationQueue.enqueue(async () => {
+      try {
+        await authStore.initialize();
+        navigate('/dashboard');
+        await verifySlack();
+      } catch (error) {
+        handleError(error);
+        throw error;
+      }
+    }, 'auth-verification');
+  };
 
-        verificarCredenciais();
-    }, []);
+  const login = async (username: string, password: string): Promise<void> => {
+    await initializationQueue.enqueue(async () => {
+      try {
+        await authStore.login(username, password);
+        navigate('/dashboard');
+        await verifySlack();
+      } catch (error) {
+        handleError(error);
+        throw error;
+      }
+    }, 'login');
+  };
 
-    return {
-        login,
-        isLoading
-    };
-}; 
+  useEffect(() => {
+    if (hasInitialized.current) return;
+
+    if (!authStore.isInitialized && !authStore.isLoading) {
+      hasInitialized.current = true;
+      verifyCredentials().catch(() => {
+        hasInitialized.current = false;
+      });
+    }
+  }, [authStore.isInitialized, authStore.isLoading]);
+
+  return {
+    login,
+    isLoading: authStore.isLoading || slackStore.isLoading,
+    verifyCredentials
+  };
+};

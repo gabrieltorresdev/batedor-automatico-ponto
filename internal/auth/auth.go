@@ -12,9 +12,9 @@ import (
 )
 
 type LoginError struct {
-	Type    string
-	Message string
-	Cause   error
+	Type    string `json:"type"`
+	Message string `json:"message"`
+	Cause   error  `json:"-"` // Omit cause from JSON
 }
 
 func (e *LoginError) Error() string {
@@ -22,6 +22,22 @@ func (e *LoginError) Error() string {
 		return fmt.Sprintf("%s: %v", e.Message, e.Cause)
 	}
 	return e.Message
+}
+
+// MarshalJSON implements the json.Marshaler interface
+func (e *LoginError) MarshalJSON() ([]byte, error) {
+	type errorResponse struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	}
+
+	resp := errorResponse{
+		Type:    e.Type,
+		Message: e.Message,
+	}
+
+	// Use the standard json package to marshal the struct
+	return []byte(fmt.Sprintf(`{"type":"%s","message":"%s"}`, resp.Type, resp.Message)), nil
 }
 
 var (
@@ -83,7 +99,7 @@ func NewAuthSession(headless bool, ctx context.Context) BrowserSession {
 		chromedp.Flag("ignore-certificate-errors", true),
 		chromedp.Flag("disable-extensions", true),
 		chromedp.WindowSize(browserWindowWidth, browserWindowHeight),
-		chromedp.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+		// chromedp.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 	)
 
 	allocCtx, _ := chromedp.NewExecAllocator(ctx, opts...)
@@ -229,7 +245,18 @@ func (a *AuthSession) checkForLoginErrors() (bool, error) {
 		}
 	}
 
+	// mensagemErro = "Você está fora do horário permitido"
+
 	mensagemErroLower := strings.ToLower(mensagemErro)
+
+	if strings.Contains(mensagemErroLower, "bloqueado") ||
+		strings.Contains(mensagemErroLower, "intervalo") ||
+		strings.Contains(mensagemErroLower, "horário permitido") {
+		return true, &LoginError{
+			Type:    "blocked",
+			Message: mensagemErro,
+		}
+	}
 
 	// Verifica várias possíveis mensagens de erro de credenciais
 	mensagensErro := []string{
@@ -243,20 +270,18 @@ func (a *AuthSession) checkForLoginErrors() (bool, error) {
 		if strings.Contains(mensagemErroLower, erro) {
 			return true, &LoginError{
 				Type:    "auth",
-				Message: "credenciais inválidas",
+				Message: mensagemErro,
 			}
 		}
-	}
-
-	if strings.Contains(mensagemErroLower, "bloqueado") ||
-		strings.Contains(mensagemErroLower, "intervalo") ||
-		strings.Contains(mensagemErroLower, "horário permitido") {
-		return false, ErrUserBlocked
 	}
 
 	// Se encontrou alguma mensagem de erro mas não é uma das conhecidas, loga para debug
 	if mensagemErro != "" {
 		log.Printf("Mensagem de erro encontrada: %s", mensagemErro)
+		return true, &LoginError{
+			Type:    "unknown",
+			Message: mensagemErro,
+		}
 	}
 
 	return false, nil

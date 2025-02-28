@@ -59,8 +59,8 @@ func NewGerenciadorPonto(ctx context.Context) *GerenciadorPonto {
 }
 
 const (
-	maxTentativas              = 10
-	tempoEsperaEntreTentativas = 500 * time.Millisecond
+	maxTentativas              = 3
+	tempoEsperaEntreTentativas = 200 * time.Millisecond
 )
 
 func (g *GerenciadorPonto) aguardarAjax() chromedp.Action {

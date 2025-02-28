@@ -220,12 +220,19 @@ func (a *App) LoginPonto(username string, password string) error {
 
 	if err := a.authModule.Login(credentials); err != nil {
 		var loginErr *auth.LoginError
-		if errors.As(err, &loginErr) && loginErr.Type == "auth" {
-			if delErr := a.DeletarCredenciais(); delErr != nil {
-				println("Erro ao deletar credenciais:", delErr.Error())
+		if errors.As(err, &loginErr) {
+			// Apenas exclui as credenciais para erros de autenticação, não para bloqueios
+			if loginErr.Type == "auth" {
+				if delErr := a.DeletarCredenciais(); delErr != nil {
+					println("Erro ao deletar credenciais:", delErr.Error())
+				}
 			}
+			// Não exclui credenciais para erros de bloqueio (type == "blocked")
+
+			// Retorna o erro original sem envolver em outro erro
 			return loginErr
 		}
+		// Para outros tipos de erro, mantém o comportamento atual
 		return fmt.Errorf("erro ao fazer login: %w", err)
 	}
 
@@ -242,9 +249,21 @@ func (a *App) VerificarCredenciaisSalvas() error {
 		if err == auth.ErrCredenciaisNaoEncontradas {
 			return nil
 		}
-		return fmt.Errorf("erro ao carregar credenciais: %w", err)
+
+		// Verifica se é um erro de login e retorna diretamente
+		var loginErr *auth.LoginError
+		if errors.As(err, &loginErr) {
+			return loginErr
+		}
+
+		// Cria um erro estruturado para outros tipos de erro
+		return &auth.LoginError{
+			Type:    "system",
+			Message: err.Error(),
+		}
 	}
 
+	// LoginPonto já trata os erros adequadamente, incluindo não apagar credenciais para bloqueios
 	return a.LoginPonto(creds.Username, creds.Password)
 }
 
@@ -435,6 +454,11 @@ func (a *App) reinicializarModuloPonto() error {
 	}
 
 	if err := a.authModule.Login(creds); err != nil {
+		// Verifica se é um erro de login e retorna diretamente para preservar o tipo
+		var loginErr *auth.LoginError
+		if errors.As(err, &loginErr) {
+			return loginErr
+		}
 		return fmt.Errorf("erro ao fazer login: %w", err)
 	}
 
