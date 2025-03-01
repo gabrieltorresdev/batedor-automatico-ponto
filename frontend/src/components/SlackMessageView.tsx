@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSlackMessage } from '@/hooks/useSlackMessage';
-import { TipoMensagem } from '@/services/SlackService';
+import { useSlackManager } from '@/hooks/useSlackManager';
+import { TipoMensagem } from '@/store/slack/types';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, MessageSquare } from 'lucide-react';
@@ -40,10 +40,9 @@ export default function SlackMessageView() {
     const navigate = useNavigate();
     const {
         isLoading,
-        enviarMensagem,
-        prepararMensagem,
-        getMensagensPreset
-    } = useSlackMessage();
+        sendMessage,
+        getPresetMessages
+    } = useSlackManager();
 
     const [selectedType, setSelectedType] = useState<TipoMensagem | null>(null);
     const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
@@ -61,13 +60,13 @@ export default function SlackMessageView() {
 
     const handleConfirmMessage = async () => {
         if (selectedMessage) {
-            enviarMensagem(selectedMessage, {
-                onSuccess: () => {
-                    setShowConfirmDialog(false);
-                    setSelectedMessage(null);
-                    navigate('/dashboard');
-                }
-            });
+            try {
+                await sendMessage(selectedMessage);
+                setShowConfirmDialog(false);
+                setSelectedMessage(null);
+            } catch (error) {
+                console.error('Error sending message:', error);
+            }
         }
     };
 
@@ -110,7 +109,7 @@ export default function SlackMessageView() {
                         <span className="text-xs font-medium text-muted-foreground">Selecione a Mensagem</span>
                     </div>
                     <div className="grid grid-cols-1 gap-2">
-                        {getMensagensPreset(selectedType).map((mensagem, index) => (
+                        {getPresetMessages(selectedType).map((mensagem, index) => (
                             <MessageCard
                                 key={index}
                                 message={mensagem}

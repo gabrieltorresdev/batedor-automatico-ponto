@@ -2,26 +2,23 @@ import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
-import { usePontoStore } from "@/store/pontoStore";
-import { slackService } from "@/services/SlackService";
-import { Status } from "@/types/slack";
+import { usePontoManager } from "@/hooks/usePontoManager";
+import { useSlackManager } from "@/hooks/useSlackManager";
+import { Status } from "@/store/slack/types";
 import StatusEmoji from "@/components/StatusEmoji";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { pontoService } from "@/services/PontoService";
+import { normalizarOperacao, getOperacaoDisplay } from "@/store/ponto/actions";
+import { Localizacao } from "@/store/ponto/types";
+import { normalizeLocation, getDefaultStatus, getDefaultMessages } from "@/store/slack/actions";
 import React from "react";
 
 interface PontoSlackResumoProps {
   onConfirm: (dados: { operacao: string | number; status: Status; mensagem: string }) => Promise<void>;
   onCancel: () => void;
-}
-
-interface Localizacao {
-  Nome: string;
-  Valor: string;
 }
 
 const formSchema = z.object({
@@ -39,7 +36,8 @@ export default function PontoSlackResumo({ onConfirm, onCancel }: PontoSlackResu
   const [localizacoes, setLocalizacoes] = useState<Localizacao[]>([]);
   const [operacoes, setOperacoes] = useState<Array<string | number>>([]);
   const [mensagensDisponiveis, setMensagensDisponiveis] = useState<string[]>([]);
-  const pontoStore = usePontoStore();
+  const pontoManager = usePontoManager();
+  const slackManager = useSlackManager();
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: { localizacao: "", operacao: "", status: "", mensagem: "" },
@@ -47,11 +45,11 @@ export default function PontoSlackResumo({ onConfirm, onCancel }: PontoSlackResu
 
   const atualizarStatusEMensagens = (operacao: string | number, loc: string) => {
     try {
-      const operacaoNormalizada = pontoService.normalizarOperacao(operacao);
-      const localizacaoNormalizada = pontoService.normalizarLocalizacao(loc);
-      const novoStatus = slackService.getDefaultStatus(operacaoNormalizada, localizacaoNormalizada);
+      const operacaoNormalizada = normalizarOperacao(operacao);
+      const localizacaoNormalizada = normalizarLocalizacao(loc);
+      const novoStatus = getDefaultStatus(operacaoNormalizada, localizacaoNormalizada);
       form.setValue("status", JSON.stringify(novoStatus), { shouldValidate: true });
-      const mensagens = slackService.getDefaultMensagens(operacaoNormalizada);
+      const mensagens = getDefaultMessages(operacaoNormalizada);
       setMensagensDisponiveis(mensagens);
       form.setValue("mensagem", mensagens[0] || "", { shouldValidate: true, shouldDirty: true, shouldTouch: true });
     } catch (error) {
@@ -59,26 +57,38 @@ export default function PontoSlackResumo({ onConfirm, onCancel }: PontoSlackResu
     }
   };
 
-  const handleLocalizacaoChange = async (value: string) => {
-    const loc = localizacoes.find((l) => l.Valor === value);
-    if (!loc) return;
+  // Função auxiliar para normalizar localização
+  const normalizarLocalizacao = (localizacao: string): string => {
+    return normalizeLocation(localizacao);
+  };
 
+  const onSubmit = async (values: FormValues) => {
+    try {
+      const status = JSON.parse(values.status) as Status;
+      await onConfirm({
+        operacao: values.operacao,
+        status,
+        mensagem: values.mensagem || "",
+      });
+    } catch (error) {
+      console.error("Erro ao enviar formulário:", error);
+    }
+  };
+
+  const handleLocalizacaoChange = async (value: string) => {
+    form.setValue("localizacao", value, { shouldValidate: true });
     setIsLoadingOperacoes(true);
     try {
-      await pontoStore.selecionarLocalizacao(loc);
-      const novaLocalizacao = await pontoStore.obterLocalizacaoAtual();
-      form.setValue("localizacao", value, { shouldValidate: true });
-      const ops = await pontoStore.obterOperacoesDisponiveis();
-      setOperacoes(ops);
-
-      if (ops.length > 0) {
-        const primeiraOperacao = ops[0].toString();
-        form.setValue("operacao", primeiraOperacao);
-        atualizarStatusEMensagens(primeiraOperacao, novaLocalizacao);
-      } else {
-        form.setValue("operacao", "");
-        form.setValue("status", "");
-        setMensagensDisponiveis([]);
+      const localizacao = localizacoes.find((loc) => loc.Valor === value);
+      if (localizacao) {
+        await pontoManager.selecionarLocalizacao(localizacao);
+        const ops = await pontoManager.obterOperacoesDisponiveis();
+        setOperacoes(ops);
+        if (ops.length > 0) {
+          const primeiraOperacao = ops[0];
+          form.setValue("operacao", primeiraOperacao.toString(), { shouldValidate: true });
+          atualizarStatusEMensagens(primeiraOperacao, localizacao.Nome);
+        }
       }
     } catch (error) {
       console.error("Erro ao atualizar localização:", error);
@@ -87,37 +97,20 @@ export default function PontoSlackResumo({ onConfirm, onCancel }: PontoSlackResu
     }
   };
 
-  const handleOperacaoChange = (value: string) => {
-    form.setValue("operacao", value, { shouldValidate: true });
-    const loc = localizacoes.find((l) => l.Valor === form.getValues("localizacao"));
-    if (loc) atualizarStatusEMensagens(value, loc.Nome);
-  };
-
-  const onSubmit = async (data: FormValues) => {
-    if (isLoadingOperacoes) return;
-    try {
-      const status: Status = JSON.parse(data.status);
-      const operacao = pontoService.normalizarOperacao(data.operacao);
-      await onConfirm({ operacao, status, mensagem: data.mensagem || "ok" });
-    } catch (error) {
-      console.error("Erro ao submeter formulário:", error);
-    }
-  };
-
   useEffect(() => {
     const carregarDados = async () => {
       setIsLoading(true);
       try {
         const [locAtual, locs] = await Promise.all([
-          pontoStore.obterLocalizacaoAtual(),
-          pontoStore.obterLocalizacoesDisponiveis(),
+          pontoManager.obterLocalizacaoAtual(),
+          pontoManager.obterLocalizacoesDisponiveis(),
         ]);
         setLocalizacoes(locs);
         const localizacaoAtual = locs.find((l) => l.Nome === locAtual);
         if (localizacaoAtual) {
           form.setValue("localizacao", localizacaoAtual.Valor, { shouldValidate: true });
           setIsLoadingOperacoes(true);
-          const ops = await pontoStore.obterOperacoesDisponiveis();
+          const ops = await pontoManager.obterOperacoesDisponiveis();
           setOperacoes(ops);
           if (ops.length > 0) {
             const primeiraOperacao = ops[0];
@@ -145,24 +138,37 @@ export default function PontoSlackResumo({ onConfirm, onCancel }: PontoSlackResu
   }
 
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-2">
-        <div className="flex flex-col gap-2">
+    <Card className="p-4">
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <FormField
             control={form.control}
             name="localizacao"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-xs font-medium text-muted-foreground">Localização</FormLabel>
-                <Select value={field.value} onValueChange={handleLocalizacaoChange} disabled={isLoadingOperacoes}>
+                <FormLabel>Localização</FormLabel>
+                <Select
+                  onValueChange={(value) => handleLocalizacaoChange(value)}
+                  value={field.value}
+                  disabled={isLoadingOperacoes}
+                >
                   <FormControl>
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Selecione a localização" />
+                    <SelectTrigger>
+                      {isLoadingOperacoes ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <span>Carregando...</span>
+                        </div>
+                      ) : (
+                        <SelectValue placeholder="Selecione a localização" />
+                      )}
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
                     {localizacoes.map((loc) => (
-                      <SelectItem key={loc.Valor} value={loc.Valor}>{loc.Nome}</SelectItem>
+                      <SelectItem key={loc.Valor} value={loc.Valor}>
+                        {loc.Nome}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -176,26 +182,29 @@ export default function PontoSlackResumo({ onConfirm, onCancel }: PontoSlackResu
             name="operacao"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-xs font-medium text-muted-foreground">Operação</FormLabel>
-                <Select value={field.value} onValueChange={handleOperacaoChange} disabled={isLoadingOperacoes || !operacoes.length}>
+                <FormLabel>Operação</FormLabel>
+                <Select
+                  onValueChange={(value) => {
+                    field.onChange(value);
+                    const localizacaoAtual = localizacoes.find(
+                      (loc) => loc.Valor === form.getValues("localizacao")
+                    );
+                    if (localizacaoAtual) {
+                      atualizarStatusEMensagens(value, localizacaoAtual.Nome);
+                    }
+                  }}
+                  value={field.value}
+                  disabled={isLoadingOperacoes}
+                >
                   <FormControl>
-                    <SelectTrigger className="h-8 text-xs">
-                      {isLoadingOperacoes ? (
-                        <div className="flex items-center gap-2">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          <span>Carregando...</span>
-                        </div>
-                      ) : (
-                        <SelectValue placeholder="Selecione">
-                          {field.value && pontoService.getOperacaoDisplay(field.value)}
-                        </SelectValue>
-                      )}
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a operação" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
                     {operacoes.map((op) => (
                       <SelectItem key={op.toString()} value={op.toString()}>
-                        {pontoService.getOperacaoDisplay(op)}
+                        {getOperacaoDisplay(op)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -204,98 +213,84 @@ export default function PontoSlackResumo({ onConfirm, onCancel }: PontoSlackResu
               </FormItem>
             )}
           />
-        </div>
 
-        {(form.watch("status") || mensagensDisponiveis.length > 0) && (
-          <div className="flex flex-col gap-2">
-            <FormField
-              control={form.control}
-              name="status"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs font-medium text-muted-foreground">Status</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue placeholder="Selecione o status">
-                          {field.value && (
-                            <div className="flex items-center gap-2">
-                              <StatusEmoji emoji={JSON.parse(field.value).emoji} className="w-3 h-3" />
-                              <span>{JSON.parse(field.value).mensagem}</span>
-                            </div>
-                          )}
-                        </SelectValue>
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {slackService.getStatusPresets().map((status, index) => (
-                        <SelectItem key={index} value={JSON.stringify(status)}>
-                          <div className="flex items-center gap-2">
-                            <StatusEmoji emoji={status.emoji} className="w-3 h-3" />
-                            <span>{status.mensagem}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {mensagensDisponiveis.length > 0 && (
-              <FormField
-                control={form.control}
-                name="mensagem"
-                render={({ field: { onChange, value, ...field } }) => {
-                  const currentValue = value || mensagensDisponiveis[0];
-                  React.useEffect(() => {
-                    if (!value && mensagensDisponiveis.length) {
-                      onChange(mensagensDisponiveis[0]);
-                      form.setValue("mensagem", mensagensDisponiveis[0], {
-                        shouldValidate: true,
-                        shouldDirty: true,
-                        shouldTouch: true,
-                      });
-                    }
-                  }, [value, mensagensDisponiveis]);
-
-                  return (
-                    <FormItem>
-                      <FormLabel className="text-xs font-medium text-muted-foreground">Mensagem</FormLabel>
-                      <Select value={currentValue} onValueChange={(newValue) => {
-                        onChange(newValue);
-                        form.setValue("mensagem", newValue, {
-                          shouldValidate: true,
-                          shouldDirty: true,
-                          shouldTouch: true,
-                        });
-                      }}>
-                        <FormControl>
-                          <SelectTrigger className="h-8 text-xs">
-                            <SelectValue>{currentValue}</SelectValue>
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {mensagensDisponiveis.map((mensagem, index) => (
-                            <SelectItem key={index} value={mensagem}>{mensagem}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  );
-                }}
-              />
+          <FormField
+            control={form.control}
+            name="status"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Status no Slack</FormLabel>
+                <Select
+                  onValueChange={field.onChange}
+                  value={field.value}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o status" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {slackManager.getStatusPresets().map((status, index) => (
+                      <SelectItem
+                        key={index}
+                        value={JSON.stringify(status)}
+                      >
+                        <div className="flex items-center gap-2">
+                          <StatusEmoji emoji={status.emoji} />
+                          <span>{status.text}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
             )}
-          </div>
-        )}
+          />
 
-        <div className="flex justify-end gap-2 mt-2">
-          <Button variant="outline" onClick={onCancel} type="button" className="h-8 text-xs">Cancelar</Button>
-          <Button type="submit" className="h-8 text-xs">Confirmar</Button>
-        </div>
-      </form>
-    </Form>
+          <FormField
+            control={form.control}
+            name="mensagem"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Mensagem no Slack</FormLabel>
+                <Select
+                  onValueChange={field.onChange}
+                  value={field.value}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a mensagem" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {mensagensDisponiveis.map((msg, index) => (
+                      <SelectItem key={index} value={msg}>
+                        {msg}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <div className="flex justify-between gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              className="flex-1"
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" className="flex-1">
+              Confirmar
+            </Button>
+          </div>
+        </form>
+      </Form>
+    </Card>
   );
 }

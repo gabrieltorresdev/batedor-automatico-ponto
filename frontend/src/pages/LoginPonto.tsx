@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuthManager } from "@/hooks/useAuthManager";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -30,7 +30,8 @@ type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginPonto() {
   const navigate = useNavigate();
-  const { login, isLoading } = useAuth();
+  const authManager = useAuthManager();
+  const { login, isLoading } = authManager;
 
   const form = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),

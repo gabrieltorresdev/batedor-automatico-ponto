@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { usePonto } from "@/hooks/usePonto";
+import { usePontoManager } from "@/hooks/usePontoManager";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, MapPin, Clock } from "lucide-react";
-import { Localizacao, TipoOperacao } from "@/services/PontoService";
+import { Loader2, MapPin, Clock, RefreshCw } from "lucide-react";
+import { Localizacao, TipoOperacao } from "@/store/ponto/types";
 import { useNavigate } from "react-router-dom";
 import {
   Select,
@@ -12,28 +12,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { pontoService } from "@/services/PontoService";
+import { getOperacaoDisplay } from "@/store/ponto/actions";
 
 export default function PontoView() {
   const navigate = useNavigate();
   const [isLoadingOperacoes, setIsLoadingOperacoes] = useState(false);
+  const pontoManager = usePontoManager();
   const {
     isLoading,
     localizacaoAtual,
     localizacoesDisponiveis,
     operacoesDisponiveis,
-    carregarLocalizacaoAtual,
-    carregarLocalizacoesDisponiveis,
+    obterLocalizacaoAtual,
+    obterLocalizacoesDisponiveis,
     selecionarLocalizacao,
-    carregarOperacoesDisponiveis,
+    obterOperacoesDisponiveis,
     executarOperacao,
-  } = usePonto();
+    retryStatus
+  } = pontoManager;
 
   useEffect(() => {
     const loadInitialData = async () => {
-      await carregarLocalizacaoAtual();
-      await carregarLocalizacoesDisponiveis();
-      await carregarOperacoesDisponiveis();
+      await obterLocalizacaoAtual();
+      await obterLocalizacoesDisponiveis();
+      await obterOperacoesDisponiveis();
     };
     loadInitialData();
   }, []);
@@ -46,7 +48,7 @@ export default function PontoView() {
       );
       if (localizacao) {
         await selecionarLocalizacao(localizacao);
-        await carregarOperacoesDisponiveis();
+        await obterOperacoesDisponiveis();
       }
     } catch (error) {
       console.error("Erro ao atualizar localização:", error);
@@ -56,16 +58,19 @@ export default function PontoView() {
   };
 
   const handleOperationSelect = async (operacao: TipoOperacao) => {
-    if (isLoadingOperacoes) return;
+    if (isLoadingOperacoes || retryStatus.isRetrying) return;
     try {
       await executarOperacao(operacao);
-      navigate("/dashboard");
+      // Navigation is handled by the hook
     } catch (error) {
       console.error("Erro ao executar operação:", error);
     }
   };
 
-  if (isLoading) {
+  const isRetrying = retryStatus.isRetrying;
+  const activeRetry = retryStatus.active;
+
+  if (isLoading && !isRetrying) {
     return (
       <div className="flex flex-col items-center justify-center p-2">
         <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -89,13 +94,17 @@ export default function PontoView() {
               ?.Valor
           }
           onValueChange={handleLocationChange}
-          disabled={isLoadingOperacoes}
+          disabled={isLoadingOperacoes || isRetrying}
         >
           <SelectTrigger className="h-8 text-xs">
-            {isLoadingOperacoes ? (
+            {isLoadingOperacoes || (isRetrying && retryStatus.localizacao.isRetrying) ? (
               <div className="flex items-center gap-2">
                 <Loader2 className="h-3 w-3 animate-spin" />
-                <span>Carregando...</span>
+                <span>
+                  {isRetrying && retryStatus.localizacao.isRetrying 
+                    ? `Tentativa ${activeRetry?.attempt || 0}/${activeRetry?.maxAttempts || 3}` 
+                    : "Carregando..."}
+                </span>
               </div>
             ) : (
               <SelectValue placeholder="Selecione a localização" />
@@ -125,9 +134,18 @@ export default function PontoView() {
               onClick={() => handleOperationSelect(operacao)}
               variant="outline"
               className="h-8 text-xs justify-start"
-              disabled={isLoadingOperacoes}
+              disabled={isLoadingOperacoes || isRetrying}
             >
-              {pontoService.getOperacaoDisplay(operacao)}
+              {isRetrying && retryStatus.execucao.isRetrying ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                  <span>
+                    Tentativa {activeRetry?.attempt || 0}/{activeRetry?.maxAttempts || 3}
+                  </span>
+                </div>
+              ) : (
+                getOperacaoDisplay(operacao)
+              )}
             </Button>
           ))}
         </div>

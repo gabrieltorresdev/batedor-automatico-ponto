@@ -1,11 +1,12 @@
 import { Button } from "@/components/ui/button";
 import LoginForm from "../components/LoginForm";
-import { useAuth } from "../hooks/useAuth";
+import { useAuthManager } from "../hooks/useAuthManager";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function Home() {
-  const { login, isLoading } = useAuth();
+  const authManager = useAuthManager();
+  const { login, isLoading } = authManager;
 
   if (isLoading) {
     return (

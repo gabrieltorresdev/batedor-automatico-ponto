@@ -1,4 +1,4 @@
-import { useSlackStatus } from '@/hooks/useSlackStatus';
+import { useSlackManager } from '@/hooks/useSlackManager';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const normalizeEmoji = (emoji: string) => {
@@ -32,7 +32,7 @@ const StatusEmoji = ({ emoji }: { emoji: string }) => {
 };
 
 export default function StatusDetails() {
-    const { isLoading, currentStatus } = useSlackStatus();
+    const { isLoading, currentStatus } = useSlackManager();
 
     if (isLoading) {
         return (
@@ -55,7 +55,7 @@ export default function StatusDetails() {
                 )}
             </div>
             <span className="text-sm font-medium line-clamp-1 text-start">
-                {currentStatus ? currentStatus.mensagem : 'Nenhum status definido'}
+                {currentStatus ? currentStatus.text : 'Nenhum status definido'}
             </span>
         </div>
     );

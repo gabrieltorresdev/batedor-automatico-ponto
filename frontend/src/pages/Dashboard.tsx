@@ -3,12 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { Slack, AlertCircle, InfoIcon, Settings, ExternalLink, RefreshCw } from "lucide-react";
 
 import { useMainMenu } from "@/hooks/useMainMenu";
-import { useSlackStore } from "@/store/slackStore";
+import { useSlackManager } from "@/hooks/useSlackManager";
 import { useNotifyStore } from "@/store/notifyStore";
-import { useAuthStore } from "@/store/authStore";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuthManager } from "@/hooks/useAuthManager";
 import { withRuntime } from "@/lib/wailsRuntime";
 import { VerificarCredenciaisSalvas } from "../../wailsjs/go/main/App";
+import { RetryStatus } from "@/lib/initializationQueue";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -24,6 +24,27 @@ import {
 import { MainMenuActionType } from "@/types/ponto";
 import { cn } from "@/lib/utils";
 
+// Helper function to map RetryStatus to StatusCard props format
+const mapRetryStatus = (status: RetryStatus | { isRetrying: boolean; retryAttempt: number; maxRetries: number; } | null | undefined) => {
+  if (!status) return undefined;
+  
+  // Check if it's the RetryStatus type from initializationQueue
+  if ('attempt' in status && 'maxAttempts' in status) {
+    return {
+      isRetrying: status.isRetrying,
+      attempt: status.attempt,
+      maxAttempts: status.maxAttempts
+    };
+  }
+  
+  // Otherwise it's the object with retryAttempt/maxRetries properties
+  return {
+    isRetrying: status.isRetrying,
+    attempt: status.retryAttempt,
+    maxAttempts: status.maxRetries
+  };
+};
+
 // Components
 const StatusCards = ({ 
   isPontoInitialized, 
@@ -35,7 +56,8 @@ const StatusCards = ({
   onRetrySlack,
   onLogin,
   onReinitializeAuth,
-  isReinitializing
+  isReinitializing,
+  authRetryStatus
 }: {
   isPontoInitialized: boolean;
   pontoError: { type: string; message: string } | null;
@@ -47,21 +69,30 @@ const StatusCards = ({
   onLogin: () => void;
   onReinitializeAuth: () => void;
   isReinitializing: boolean;
+  authRetryStatus?: { isRetrying: boolean; attempt: number; maxAttempts: number };
 }) => {
   const hasError = pontoError || (isSlackInitialized && !isSlackAuthenticated);
   const isLoading = !isPontoInitialized || !isSlackInitialized || isReinitializing;
+  const isRetrying = authRetryStatus?.isRetrying || false;
 
-  if (!hasError && !isLoading) {
+  if (!hasError && !isLoading && !isRetrying) {
     return null;
   }
 
   return (
     <div className="space-y-2">
-      {(isReinitializing || !isPontoInitialized) && (
+      {(isReinitializing || !isPontoInitialized || isRetrying) && (
         <StatusCard 
           icon={<Skeleton className="h-3 w-3 rounded-full" />}
-          title={isReinitializing ? "Reconectando ao Sistema" : "Inicializando"}
+          title={isRetrying 
+            ? "Tentando Reconectar ao Sistema" 
+            : isReinitializing 
+              ? "Reconectando ao Sistema" 
+              : "Inicializando"}
           variant="default"
+          isRetrying={isRetrying}
+          retryAttempt={authRetryStatus?.attempt || 0}
+          maxRetryAttempts={authRetryStatus?.maxAttempts || 0}
         >
           <div className="space-y-1">
             <Skeleton className="h-2 w-24" />
@@ -69,7 +100,7 @@ const StatusCards = ({
         </StatusCard>
       )}
 
-      {!isReinitializing && pontoError && pontoError.type === 'invalid_credentials' && (
+      {!isReinitializing && !isRetrying && pontoError && pontoError.type === 'invalid_credentials' && (
         <StatusCard 
           icon={<InfoIcon className="h-4 w-4" />}
           title="Configuração Necessária do Ponto"
@@ -89,7 +120,7 @@ const StatusCards = ({
         </StatusCard>
       )}
 
-      {!isReinitializing && pontoError && pontoError.type === 'blocked' && (
+      {!isReinitializing && !isRetrying && pontoError && pontoError.type === 'blocked' && (
         <StatusCard 
           icon={<AlertCircle className="h-4 w-4" />}
           title="Sistema Temporariamente Bloqueado"
@@ -108,7 +139,7 @@ const StatusCards = ({
         </StatusCard>
       )}
 
-      {!isReinitializing && pontoError && pontoError.type === 'network' && (
+      {!isReinitializing && !isRetrying && pontoError && pontoError.type === 'network' && (
         <StatusCard 
           icon={<AlertCircle className="h-4 w-4" />}
           title="Erro de Conexão"
@@ -127,7 +158,7 @@ const StatusCards = ({
         </StatusCard>
       )}
 
-      {!isReinitializing && pontoError && pontoError.type === 'runtime' && (
+      {!isReinitializing && !isRetrying && pontoError && pontoError.type === 'runtime' && (
         <StatusCard 
           icon={<AlertCircle className="h-4 w-4" />}
           title="Sistema Indisponível"
@@ -258,11 +289,14 @@ const ActionButton = ({
 export default function Dashboard() {
   const navigate = useNavigate();
   const addNotification = useNotifyStore((state) => state.addNotification);
+  const authManager = useAuthManager();
   const { 
     isInitialized: isPontoInitialized,
     error: pontoError,
-    isLoading: isAuthLoading
-  } = useAuthStore();
+    isLoading: isAuthLoading,
+    reinitializeAuth,
+    verifyCredentials
+  } = authManager;
   
   const [isReinitializing, setIsReinitializing] = useState(false);
   
@@ -279,9 +313,9 @@ export default function Dashboard() {
     isInitialized: isSlackInitialized,
     error: slackError,
     verifySlackSession
-  } = useSlackStore();
+  } = useSlackManager();
 
-  const { verifyCredentials } = useAuth();
+  const authRetryStatus = mapRetryStatus(authManager.retryStatus.active || authManager.retryStatus.verification);
 
   useEffect(() => {
     let isMounted = true;
@@ -290,14 +324,16 @@ export default function Dashboard() {
     const initializeModules = async () => {
       if (initializationPromise) return initializationPromise;
       
-      if (!isPontoInitialized || !isSlackInitialized) {
+      // Only initialize if not already initialized and not loading
+      if ((!isPontoInitialized && !isAuthLoading) || (!isSlackInitialized && !isSlackLoading)) {
         initializationPromise = (async () => {
           try {
-            if (!isPontoInitialized) {
-              await verifyCredentials();
+            if (!isPontoInitialized && !isAuthLoading) {
+              const success = await verifyCredentials();
+              // No need to navigate since we're already on the dashboard
             }
             
-            if (!isSlackInitialized && isMounted) {
+            if (!isSlackInitialized && !isSlackLoading && isMounted) {
               await verifySlackSession();
             }
             
@@ -322,7 +358,7 @@ export default function Dashboard() {
     return () => {
       isMounted = false;
     };
-  }, [isPontoInitialized, isSlackInitialized, verifyCredentials, verifySlackSession, refreshActions, addNotification]);
+  }, [isPontoInitialized, isSlackInitialized, verifyCredentials, verifySlackSession, refreshActions, addNotification, isAuthLoading, isSlackLoading]);
 
   const handleRetrySlack = async () => {
     try {
@@ -342,65 +378,12 @@ export default function Dashboard() {
   const handleReinitializeAuth = async () => {
     try {
       setIsReinitializing(true);
-      addNotification("Tentando reconectar ao sistema...", "info");
-      
-      // Reset the auth state to force a complete reinitialization
-      const authStore = useAuthStore.getState();
-      authStore.setLoading(true);
-      authStore.clearError();
-      
-      // Force a complete reinitialization by calling the backend directly
-      await withRuntime(() => VerificarCredenciaisSalvas());
+      await reinitializeAuth();
       
       // Refresh actions after successful reinitialization
       await refreshActions();
-      
-      addNotification("Sistema reconectado!", "success");
     } catch (error) {
       console.debug('Erro ao reinicializar autenticação:', error);
-      
-      // Make sure the auth store is updated with the error
-      const authStore = useAuthStore.getState();
-      
-      // Determine error type and message
-      let errorType = 'runtime';
-      let errorMessage = 'Erro ao reconectar ao sistema';
-      
-      // Extract error message from different error formats
-      if (typeof error === 'object' && error !== null) {
-        // Check for Wails runtime error format
-        if ('error' in error && typeof (error as any).error === 'string') {
-          errorMessage = (error as any).error;
-        } else if ('message' in error) {
-          // Standard Error object
-          errorMessage = (error as Error).message.replace('erro ao fazer login: ', '');
-        }
-      } else if (typeof error === 'string') {
-        errorMessage = error;
-      }
-      
-      // Check for blocked error
-      if (errorMessage.toLowerCase().includes('bloqueado') || 
-          errorMessage.toLowerCase().includes('blocked') ||
-          errorMessage.toLowerCase().includes('horário permitido')) {
-        errorType = 'blocked';
-      } else if (errorMessage.toLowerCase().includes('credenciais') || 
-                errorMessage.toLowerCase().includes('auth')) {
-        errorType = 'invalid_credentials';
-      } else if (errorMessage.toLowerCase().includes('conexão') || 
-                errorMessage.toLowerCase().includes('network')) {
-        errorType = 'network';
-      }
-      
-      console.debug('Error type determined:', errorType, 'Message:', errorMessage);
-      
-      // Update auth store with the error
-      authStore.setUnauthenticated({
-        type: errorType as any,
-        message: errorMessage
-      });
-      
-      addNotification(errorMessage, 'error');
     } finally {
       setIsReinitializing(false);
     }
@@ -471,6 +454,7 @@ export default function Dashboard() {
         onLogin={() => navigate('/login-ponto')}
         onReinitializeAuth={handleReinitializeAuth}
         isReinitializing={isReinitializing}
+        authRetryStatus={authRetryStatus}
       />
 
       <SlackStatus isAuthenticated={isSlackAuthenticated} />

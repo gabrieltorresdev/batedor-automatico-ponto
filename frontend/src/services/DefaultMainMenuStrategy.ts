@@ -1,6 +1,6 @@
 import { MainMenuAction, MainMenuActionType, MainMenuStrategy } from "@/types/ponto";
 import { useNotifyStore } from "@/store/notifyStore";
-import { useSlackStore } from "@/store/slackStore";
+import { useSlackStore } from "@/store/slack/slackStore";
 import { Clock, Building2, MessageCircle, UserRoundCheck, Sparkle } from "lucide-react";
 import { createElement } from "react";
 

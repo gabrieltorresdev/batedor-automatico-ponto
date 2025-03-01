@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { usePontoStore } from '@/store/pontoStore';
-import { slackService } from '@/services/SlackService';
+import { usePontoManager } from '@/hooks/usePontoManager';
+import { useSlackManager } from '@/hooks/useSlackManager';
 import { useNotifyStore } from '@/store/notifyStore';
 import PontoSlackResumo from '@/components/PontoSlackResumo';
 import { Progress } from '@/components/ui/progress';
 import { Card } from '@/components/ui/card';
+import { Status } from '@/store/slack/types';
 
 type StepStatus = 'pending' | 'loading' | 'completed' | 'error';
 
@@ -24,7 +25,8 @@ export default function PontoSlackView() {
     ]);
     const [errorDetails, setErrorDetails] = useState<string>('');
     const addNotification = useNotifyStore((state) => state.addNotification);
-    const pontoStore = usePontoStore();
+    const pontoManager = usePontoManager();
+    const slackManager = useSlackManager();
 
     const updateStepStatus = (index: number, status: StepStatus, errorMsg?: string) => {
         setSteps(steps => steps.map((step, i) => 
@@ -35,73 +37,42 @@ export default function PontoSlackView() {
         }
     };
 
-    const handleConfirm = async (dados: {
-        operacao: string | number;
-        status: { emoji: string; mensagem: string };
-        mensagem: string;
-    }) => {
+    const handleConfirm = async (dados: { operacao: string | number; status: Status; mensagem: string }) => {
         setShowProgress(true);
-        setErrorDetails('');
-        let success = true;
-
+        
         try {
-            // Executa a operação de ponto
+            // Step 1: Register time clock
             updateStepStatus(0, 'loading');
-            try {
-                await pontoStore.executarOperacao(dados.operacao);
-                updateStepStatus(0, 'completed');
-                addNotification('Ponto registrado com sucesso!', 'success');
-            } catch (error) {
-                success = false;
-                updateStepStatus(0, 'error', `Erro ao registrar ponto: ${(error as Error).message}`);
-                throw error;
-            }
+            await pontoManager.executarOperacao(dados.operacao);
+            updateStepStatus(0, 'completed');
             
-            // Define o status no Slack
+            // Step 2: Update Slack status
             updateStepStatus(1, 'loading');
-            try {
-                await slackService.definirStatus(dados.status);
-                updateStepStatus(1, 'completed');
-                addNotification('Status atualizado com sucesso!', 'success');
-            } catch (error) {
-                success = false;
-                updateStepStatus(1, 'error', `Erro ao atualizar status: ${(error as Error).message}`);
-                if (steps[0].status === 'completed') {
-                    addNotification('O ponto foi registrado, mas houve erro ao atualizar o status no Slack', 'warning');
-                }
-                throw error;
+            await slackManager.setStatus(dados.status);
+            updateStepStatus(1, 'completed');
+            
+            // Step 3: Send Slack message
+            updateStepStatus(2, 'loading');
+            if (dados.mensagem) {
+                await slackManager.sendMessage(dados.mensagem);
+            }
+            updateStepStatus(2, 'completed');
+            
+            addNotification('Operação realizada com sucesso!', 'success');
+            
+            // Navigate back to dashboard after a short delay
+            setTimeout(() => {
+                navigate('/dashboard');
+            }, 1500);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            const currentStep = steps.findIndex(step => step.status === 'loading');
+            
+            if (currentStep !== -1) {
+                updateStepStatus(currentStep, 'error', errorMessage);
             }
             
-            // Envia a mensagem
-            updateStepStatus(2, 'loading');
-            try {
-                await slackService.enviarMensagem(dados.mensagem);
-                updateStepStatus(2, 'completed');
-                addNotification('Mensagem enviada com sucesso!', 'success');
-            } catch (error) {
-                success = false;
-                updateStepStatus(2, 'error', `Erro ao enviar mensagem: ${(error as Error).message}`);
-                if (steps[0].status === 'completed') {
-                    addNotification('O ponto foi registrado, mas houve erro ao enviar a mensagem no Slack', 'warning');
-                }
-                throw error;
-            }
-
-            if (success) {
-                // Atualiza o cache do status do Slack
-                await slackService.obterStatusAtual();
-            }
-
-        } catch (error) {
-            console.error('Erro durante execução:', error);
-        } finally {
-            // Aguarda 2 segundos antes de fechar o diálogo de progresso
-            setTimeout(() => {
-                setShowProgress(false);
-                if (success) {
-                    navigate('/dashboard');
-                }
-            }, 2000);
+            addNotification(errorMessage, 'error');
         }
     };
 
@@ -109,47 +80,48 @@ export default function PontoSlackView() {
         navigate('/dashboard');
     };
 
+    const getProgressValue = () => {
+        const completedSteps = steps.filter(step => step.status === 'completed').length;
+        return (completedSteps / steps.length) * 100;
+    };
+
     return (
         <div className="flex flex-col gap-4">
-            {!showProgress && (
-                <PontoSlackResumo onConfirm={handleConfirm} onCancel={handleCancel} />
-            )}
-            
-            {showProgress && (
+            {showProgress ? (
                 <Card className="p-4">
                     <div className="space-y-4">
-                        {steps.map((step, index) => (
-                            <div key={index} className="space-y-2">
-                                <div className="flex items-center justify-between text-sm">
-                                    <span>{step.label}</span>
-                                    <span>
-                                        {step.status === 'pending' && '⏳'}
-                                        {step.status === 'loading' && '🔄'}
-                                        {step.status === 'completed' && '✅'}
-                                        {step.status === 'error' && '❌'}
+                        <Progress value={getProgressValue()} className="h-2" />
+                        
+                        <div className="space-y-2">
+                            {steps.map((step, index) => (
+                                <div key={index} className="flex items-center gap-2">
+                                    <div className={`h-2 w-2 rounded-full ${
+                                        step.status === 'completed' ? 'bg-green-500' :
+                                        step.status === 'loading' ? 'bg-blue-500 animate-pulse' :
+                                        step.status === 'error' ? 'bg-red-500' :
+                                        'bg-gray-300'
+                                    }`} />
+                                    <span className={`text-xs ${
+                                        step.status === 'completed' ? 'text-green-500' :
+                                        step.status === 'loading' ? 'text-blue-500' :
+                                        step.status === 'error' ? 'text-red-500' :
+                                        'text-gray-500'
+                                    }`}>
+                                        {step.label}
                                     </span>
                                 </div>
-                                <Progress 
-                                    value={
-                                        step.status === 'completed' ? 100 :
-                                        step.status === 'loading' ? 50 :
-                                        step.status === 'error' ? 100 : 0
-                                    } 
-                                    className={
-                                        step.status === 'completed' ? 'bg-green-500' :
-                                        step.status === 'error' ? 'bg-red-500' : ''
-                                    }
-                                />
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                         
                         {errorDetails && (
-                            <div className="mt-4 p-2 bg-red-50 border border-red-200 rounded-md">
-                                <p className="text-sm text-red-600">{errorDetails}</p>
+                            <div className="text-xs text-red-500 mt-2">
+                                {errorDetails}
                             </div>
                         )}
                     </div>
                 </Card>
+            ) : (
+                <PontoSlackResumo onConfirm={handleConfirm} onCancel={handleCancel} />
             )}
         </div>
     );

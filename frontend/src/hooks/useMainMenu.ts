@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { MainMenuAction, MainMenuActionType } from '@/types/ponto';
 import { DefaultMainMenuStrategy } from '@/services/DefaultMainMenuStrategy';
 import { useNotifyStore } from '@/store/notifyStore';
-import { useSlackStore } from '@/store/slackStore';
+import { useSlackStore } from '@/store/slack/slackStore';
 
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error) || 'Erro desconhecido';

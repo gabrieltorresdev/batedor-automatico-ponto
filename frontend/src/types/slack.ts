@@ -10,5 +10,9 @@ export interface SlackConfig {
 
 export interface Status {
     emoji: string;
-    mensagem: string;
+    text: string;
 }
+
+// Types for message operations
+export type TipoMensagem = 'entrada' | 'refeicao' | 'saida';
+export type TipoOperacao = 'entrada' | 'almoco' | 'saida';

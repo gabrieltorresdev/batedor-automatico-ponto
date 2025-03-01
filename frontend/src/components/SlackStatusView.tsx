@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { useSlackStatus } from '@/hooks/useSlackStatus';
+import { useState, useEffect } from 'react';
+import { useSlackManager } from '@/hooks/useSlackManager';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, Slack, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Status } from '@/types/slack';
+import { Status } from '@/store/slack/types';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -64,7 +64,7 @@ const StatusCard = ({ status, onClick }: { status: Status; onClick?: () => void 
             </div>
         </div>
         <span className="text-sm font-medium line-clamp-1 text-start">
-            {status.mensagem}
+            {status.text}
         </span>
     </div>
 );
@@ -74,10 +74,10 @@ export default function SlackStatusView() {
     const {
         isLoading,
         currentStatus,
-        definirStatus,
-        limparStatus,
+        setStatus,
+        clearStatus,
         getStatusPresets
-    } = useSlackStatus();
+    } = useSlackManager();
 
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
     const [selectedStatus, setSelectedStatus] = useState<Status | null>(null);
@@ -90,23 +90,23 @@ export default function SlackStatusView() {
 
     const handleConfirmStatus = async () => {
         if (selectedStatus) {
-            definirStatus(selectedStatus, {
-                onSuccess: () => {
-                    setShowConfirmDialog(false);
-                    setSelectedStatus(null);
-                    navigate('/dashboard');
-                }
-            });
+            try {
+                await setStatus(selectedStatus);
+                setShowConfirmDialog(false);
+                setSelectedStatus(null);
+            } catch (error) {
+                console.error('Error setting status:', error);
+            }
         }
     };
 
     const handleClearStatus = async () => {
-        limparStatus(undefined, {
-            onSuccess: () => {
-                setShowClearConfirm(false);
-                navigate('/dashboard');
-            }
-        });
+        try {
+            await clearStatus();
+            setShowClearConfirm(false);
+        } catch (error) {
+            console.error('Error clearing status:', error);
+        }
     };
 
     // Filtra o status atual da lista de presets
@@ -119,8 +119,8 @@ export default function SlackStatusView() {
         const normalizedPresetEmoji = normalizeEmoji(preset.emoji);
         
         // Normaliza as mensagens (remove espaços extras e converte para minúsculas)
-        const normalizedCurrentMessage = currentStatus.mensagem.toLowerCase().trim();
-        const normalizedPresetMessage = preset.mensagem.toLowerCase().trim();
+        const normalizedCurrentMessage = currentStatus.text.toLowerCase().trim();
+        const normalizedPresetMessage = preset.text.toLowerCase().trim();
         
         // Debug para verificar os valores
         console.debug('Comparando status:', {

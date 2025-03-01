@@ -1,34 +1,33 @@
-import { useAuthStore } from "@/store/authStore";
 import { Button } from "./ui/button";
 import { useLocation, useNavigate } from "react-router-dom";
 import { LogOut, ArrowLeft, RefreshCw } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useSlackStore } from "@/store/slackStore";
+import { useSlackManager } from "@/hooks/useSlackManager";
 import { useMainMenu } from "@/hooks/useMainMenu";
 import { cn } from "@/lib/utils";
-import { VerificarCredenciaisSalvas } from "../../wailsjs/go/main/App";
 import { useNotifyStore } from "@/store/notifyStore";
 import { ThemeToggle } from "./ThemeToggle";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuthManager } from "@/hooks/useAuthManager";
 import { WindowReload } from "../../wailsjs/runtime/runtime";
 import { initializationQueue } from "@/lib/initializationQueue";
 
 export default function Header() {
+  const authManager = useAuthManager();
   const { 
     username,
     lastKnownUsername, 
     formatDisplayName, 
     logout, 
     setUnauthenticated,
-    setLoading: setAuthLoading
-  } = useAuthStore();
+    setLoading: setAuthLoading,
+    retryStatus
+  } = authManager;
   const { 
     verifySlackSession, 
     setLoading: setSlackLoading,
     reset: resetSlack 
-  } = useSlackStore();
-  const { verifyCredentials } = useAuth();
+  } = useSlackManager();
   const { refreshActions } = useMainMenu();
   const addNotification = useNotifyStore(state => state.addNotification);
   const navigate = useNavigate();
@@ -38,6 +37,9 @@ export default function Header() {
   const [displayText, setDisplayText] = useState("");
   const [isTyping, setIsTyping] = useState(true);
   const [isReloading, setIsReloading] = useState(false);
+
+  // Check if any auth task is retrying
+  const isRetrying = retryStatus.isRetrying;
 
   const phrases = [
     "A que PONTO você chegou?",
@@ -114,8 +116,10 @@ export default function Header() {
       resetStates();
       
       // Navigate to home and wait a bit for state updates
-      navigate("/");
-      await new Promise(resolve => setTimeout(resolve, 100));
+      if (location.pathname !== '/') {
+        navigate("/");
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
       
       try {
         // Force a complete context refresh with proper error handling
@@ -124,12 +128,20 @@ export default function Header() {
         
         // First verify credentials with timeout handling
         try {
-          await Promise.race([
-            verifyCredentials(),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Timeout verifying credentials')), 10000)
+          const success = await Promise.race([
+            authManager.verifyCredentials(),
+            new Promise<boolean>((_, reject) => 
+              setTimeout(() => {
+                reject(new Error('Timeout verifying credentials'));
+                return false;
+              }, 10000)
             )
           ]);
+          
+          // If verification is successful and we're not on the dashboard, navigate there
+          if (success && location.pathname !== '/dashboard') {
+            navigate('/dashboard');
+          }
         } catch (error: any) {
           console.debug('Error verifying credentials during reload:', error);
           
@@ -197,10 +209,11 @@ export default function Header() {
     addNotification,
     setAuthLoading,
     setSlackLoading,
-    verifyCredentials,
     verifySlackSession,
     refreshActions,
-    setUnauthenticated
+    setUnauthenticated,
+    authManager,
+    location
   ]);
 
   const showBackButton = location.pathname !== "/" && location.pathname !== "/dashboard";
@@ -227,10 +240,16 @@ export default function Header() {
               variant="ghost"
               size="icon"
               onClick={handleReload}
-              disabled={isReloading}
+              disabled={isReloading || isRetrying}
               className="h-7 w-7 cursor-pointer"
             >
-              <RefreshCw className={cn("h-4 w-4", isReloading && "animate-spin")} />
+              <RefreshCw className={cn(
+                "h-4 w-4", 
+                (isReloading || isRetrying) && "animate-spin"
+              )} />
+              {isRetrying && retryStatus.active && (
+                <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-yellow-500" />
+              )}
             </Button>
           )}
           {showBackButton && (
