@@ -100,7 +100,7 @@ func (b *NavegadorChrome) DefinirCookies(cookies []*network.Cookie) error {
 }
 
 func obterOpcoesNavegador(modoSilencioso bool) []chromedp.ExecAllocatorOption {
-	return append(chromedp.DefaultExecAllocatorOptions[:],
+	opcoes := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", modoSilencioso),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-setuid-sandbox", true),
@@ -110,8 +110,15 @@ func obterOpcoesNavegador(modoSilencioso bool) []chromedp.ExecAllocatorOption {
 		chromedp.Flag("no-default-browser-check", true),
 		chromedp.Flag("ignore-certificate-errors", true),
 		chromedp.Flag("disable-extensions", true),
-		chromedp.WindowSize(200, 200),
 	)
+
+	if modoSilencioso {
+		opcoes = append(opcoes, chromedp.WindowSize(200, 200))
+	} else {
+		opcoes = append(opcoes, chromedp.WindowSize(1024, 768))
+	}
+
+	return opcoes
 }
 
 func criarContextoNavegador(modoSilencioso bool) (context.Context, context.CancelFunc, error) {
@@ -119,7 +126,6 @@ func criarContextoNavegador(modoSilencioso bool) (context.Context, context.Cance
 	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
 	ctx, cancelar := chromedp.NewContext(allocCtx)
 
-	// Aguarda o navegador iniciar
 	if err := chromedp.Run(ctx); err != nil {
 		cancelar()
 		return nil, nil, fmt.Errorf("erro ao iniciar navegador: %w", err)
@@ -128,7 +134,6 @@ func criarContextoNavegador(modoSilencioso bool) (context.Context, context.Cance
 	return ctx, cancelar, nil
 }
 
-// NovaSessaoSlack cria uma nova sessão do Slack com o modo de navegador especificado
 func NovaSessaoSlack(ctxPai context.Context, modoSilencioso bool) *SessaoSlack {
 	ctx, cancelar, err := criarContextoNavegador(modoSilencioso)
 	if err != nil {
@@ -235,12 +240,10 @@ func (s *SessaoSlack) validarSessaoSomente() error {
 	ctx, cancelar := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancelar()
 
-	// Primeiro verifica se já estamos em uma página válida do Slack
 	if s.eSessaoValida(ctx) {
 		return nil
 	}
 
-	// Se não estiver, tenta navegar para a URL base
 	if err := chromedp.Run(ctx, chromedp.Navigate(slackBaseURL)); err != nil {
 		return fmt.Errorf("erro ao navegar: %w", err)
 	}
@@ -256,7 +259,6 @@ func (s *SessaoSlack) navegarParaDM() error {
 	ctx, cancelar := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancelar()
 
-	// Verifica se já estamos na DM
 	url, err := s.obterURLAtual(ctx)
 	if err == nil && url == slackDMURL {
 		return nil
@@ -271,52 +273,117 @@ func (s *SessaoSlack) navegarParaDM() error {
 }
 
 func (s *SessaoSlack) Autenticar() error {
+	fmt.Println("------------------------------------------------------------------------")
+	fmt.Println("Iniciando processo de autenticação do Slack com navegador visível")
+	fmt.Println("------------------------------------------------------------------------")
+
 	ctx, cancelar := s.comTempoLimite(tempoLimiteAuth)
 	defer cancelar()
 
+	fmt.Println("Abrindo página inicial do Slack...")
 	if err := chromedp.Run(ctx, chromedp.Navigate(slackBaseURL)); err != nil {
+		fmt.Printf("ERRO AO NAVEGAR PARA %s: %v\n", slackBaseURL, err)
 		return fmt.Errorf("erro ao abrir Slack: %w", err)
 	}
 
-	fmt.Println("\n🔐 Por favor, faça login no Slack.")
-	fmt.Println("O programa continuará após o login...")
+	time.Sleep(1 * time.Second)
+
+	var currentURL string
+	if err := chromedp.Run(ctx, chromedp.Location(&currentURL)); err != nil {
+		fmt.Printf("ERRO AO OBTER URL ATUAL: %v\n", err)
+	} else {
+		fmt.Printf("Página inicial carregada, URL atual: %s\n", currentURL)
+	}
+
+	fmt.Println("\n🔐 Por favor, faça login no Slack na janela aberta.")
+	fmt.Println("O sistema detectará automaticamente quando o login for concluído...")
 
 	if err := s.aguardarLogin(ctx); err != nil {
+		fmt.Printf("ERRO DURANTE AGUARDO DE LOGIN: %v\n", err)
 		return fmt.Errorf("erro no login: %w", err)
 	}
 
-	// Aguarda um pouco após o login para garantir que os cookies foram salvos
-	time.Sleep(2 * time.Second)
+	fmt.Println("✅ Login no Slack detectado com sucesso!")
+	fmt.Println("Aguardando sincronização de dados...")
+	time.Sleep(3 * time.Second)
+
+	if err := chromedp.Run(ctx, chromedp.Location(&currentURL)); err != nil {
+		fmt.Printf("ERRO AO OBTER URL PÓS-LOGIN: %v\n", err)
+	} else {
+		fmt.Printf("Login concluído, URL atual: %s\n", currentURL)
+	}
+
+	fmt.Println("------------------------------------------------------------------------")
+	fmt.Println("Processo de autenticação concluído com sucesso")
+	fmt.Println("------------------------------------------------------------------------")
 
 	return nil
 }
 
 func (s *SessaoSlack) aguardarLogin(ctx context.Context) error {
+	tempoInicio := time.Now()
+	ultimaURL := ""
+
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("timeout durante autenticação: %w", ctx.Err())
 		default:
 			var url string
 			if err := chromedp.Run(ctx, chromedp.Location(&url)); err != nil {
-				return err
+				fmt.Printf("Erro ao obter URL durante aguardo: %v\n", err)
+				time.Sleep(500 * time.Millisecond)
+				continue
 			}
 
-			if strings.Contains(url, slackRedirectURL) {
+			if url != ultimaURL {
+				fmt.Printf("URL detectada durante autenticação: %s\n", url)
+				ultimaURL = url
+			}
+
+			loginSucesso := false
+
+			if strings.Contains(url, slackRedirectURL) ||
+				strings.Contains(url, "app.slack.com/client") {
+				fmt.Println("Login detectado via redirecionamento de URL")
+				loginSucesso = true
+			}
+
+			var temElementos bool
+			err := chromedp.Run(ctx, chromedp.Evaluate(`
+				(() => {
+					const userButton = document.querySelector('button[data-qa="user-button"]');
+					const teamMenu = document.querySelector('button[data-qa="team-menu-button"]');
+					const messageInput = document.querySelector('div[data-qa="message_input"]');
+					
+					return !!(userButton || teamMenu || messageInput);
+				})()
+			`, &temElementos))
+
+			if err == nil && temElementos {
+				fmt.Println("Login detectado via elementos da interface")
+				loginSucesso = true
+			}
+
+			if loginSucesso {
 				return nil
 			}
+
+			if tempo := time.Since(tempoInicio); tempo > 30*time.Second && tempo%(30*time.Second) < 1*time.Second {
+				minutosRestantes := int((tempoLimiteAuth - tempo).Minutes())
+				fmt.Printf("Aguardando login... (tempo restante: aproximadamente %d minutos)\n", minutosRestantes)
+			}
+
 			time.Sleep(500 * time.Millisecond)
 		}
 	}
 }
 
 func (s *SessaoSlack) ValidarSessao() error {
-	// Primeiro valida a sessão
 	if err := s.validarSessaoSomente(); err != nil {
 		return err
 	}
 
-	// Se a sessão estiver válida, navega para DM
 	return s.navegarParaDM()
 }
 
@@ -328,14 +395,12 @@ func (s *SessaoSlack) EnviarMensagem(msg string) error {
 	ctx, cancelar := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancelar()
 
-	// Verifica se a sessão está válida sem navegar
 	if !s.eSessaoValida(ctx) {
 		if err := s.Autenticar(); err != nil {
 			return fmt.Errorf("erro na autenticação: %w", err)
 		}
 	}
 
-	// Navega para DM apenas se necessário
 	if err := s.navegarParaDM(); err != nil {
 		return fmt.Errorf("erro ao navegar para DM: %w", err)
 	}
@@ -355,30 +420,24 @@ func (s *SessaoSlack) EnviarMensagem(msg string) error {
 	})
 }
 
-// limparEstadoInicial limpa qualquer modal ou menu aberto no Slack
 func (s *SessaoSlack) limparEstadoInicial(ctx context.Context) error {
 	return chromedp.Run(ctx,
-		// Pressiona ESC para fechar qualquer modal aberto
 		chromedp.KeyEvent(kb.Escape),
 	)
 }
 
-// DefinirStatus define o status do usuário no Slack
 func (s *SessaoSlack) DefinirStatus(status Status) error {
 	ctx, cancelar := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancelar()
 
-	// Primeiro valida a sessão
 	if err := s.validarSessaoSomente(); err != nil {
 		return fmt.Errorf("erro ao validar sessão: %w", err)
 	}
 
-	// Limpa o estado inicial
 	if err := s.limparEstadoInicial(ctx); err != nil {
 		return fmt.Errorf("erro ao limpar estado inicial: %w", err)
 	}
 
-	// Abre o menu de status
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`button[data-qa="user-button"]`),
 		chromedp.WaitVisible(`button[data-qa="main-menu-custom-status-item"]`),
@@ -388,7 +447,6 @@ func (s *SessaoSlack) DefinirStatus(status Status) error {
 		return fmt.Errorf("erro ao abrir menu de status: %w", err)
 	}
 
-	// Aguarda o modal carregar e limpa o status atual
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`
 			(() => {
@@ -401,7 +459,6 @@ func (s *SessaoSlack) DefinirStatus(status Status) error {
 		fmt.Printf("\n⚠️  Aviso: não foi possível limpar status atual: %v\n", err)
 	}
 
-	// Tenta encontrar e clicar no status pré-configurado
 	var statusDefinido bool
 	err := chromedp.Run(ctx,
 		chromedp.Evaluate(`
@@ -430,7 +487,6 @@ func (s *SessaoSlack) DefinirStatus(status Status) error {
 		return fmt.Errorf("erro ao selecionar status: %w", err)
 	}
 
-	// Aguarda o status ser selecionado e clica no botão de salvar
 	err = chromedp.Run(ctx,
 		chromedp.WaitVisible(`button[data-qa="custom_status_input_go"]`),
 		chromedp.Click(`button[data-qa="custom_status_input_go"]`),
@@ -440,9 +496,8 @@ func (s *SessaoSlack) DefinirStatus(status Status) error {
 		return fmt.Errorf("erro ao salvar status: %w", err)
 	}
 
-	// Aguarda o modal fechar e verifica se o status foi alterado
 	err = chromedp.Run(ctx,
-		chromedp.Sleep(1*time.Second), // Dá um tempo para o modal fechar
+		chromedp.Sleep(1*time.Second),
 		chromedp.WaitNotPresent(`div.p-custom_status_modal`),
 	)
 
@@ -450,7 +505,6 @@ func (s *SessaoSlack) DefinirStatus(status Status) error {
 		return fmt.Errorf("erro ao confirmar salvamento do status: %w", err)
 	}
 
-	// Verifica se o status foi realmente alterado
 	statusAtual, err := s.ObterStatusAtual()
 	if err != nil {
 		return fmt.Errorf("erro ao verificar status após alteração: %w", err)
@@ -463,22 +517,18 @@ func (s *SessaoSlack) DefinirStatus(status Status) error {
 	return nil
 }
 
-// LimparStatus limpa o status do usuário no Slack
 func (s *SessaoSlack) LimparStatus() error {
 	ctx, cancelar := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancelar()
 
-	// Primeiro valida a sessão
 	if err := s.validarSessaoSomente(); err != nil {
 		return fmt.Errorf("erro ao validar sessão: %w", err)
 	}
 
-	// Limpa o estado inicial
 	if err := s.limparEstadoInicial(ctx); err != nil {
 		return fmt.Errorf("erro ao limpar estado inicial: %w", err)
 	}
 
-	// Abre o menu de status
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`button[data-qa="user-button"]`),
 		chromedp.WaitVisible(`button[data-qa="main-menu-custom-status-item"]`),
@@ -488,7 +538,6 @@ func (s *SessaoSlack) LimparStatus() error {
 		return fmt.Errorf("erro ao abrir menu de status: %w", err)
 	}
 
-	// Limpa o status atual
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`
 			(() => {
@@ -504,7 +553,6 @@ func (s *SessaoSlack) LimparStatus() error {
 		return fmt.Errorf("erro ao limpar status: %w", err)
 	}
 
-	// Aguarda e clica no botão de salvar
 	err := chromedp.Run(ctx,
 		chromedp.WaitVisible(`button[data-qa="custom_status_input_go"]`),
 		chromedp.Click(`button[data-qa="custom_status_input_go"]`),
@@ -514,9 +562,8 @@ func (s *SessaoSlack) LimparStatus() error {
 		return fmt.Errorf("erro ao salvar status: %w", err)
 	}
 
-	// Aguarda o modal fechar e verifica se o status foi alterado
 	err = chromedp.Run(ctx,
-		chromedp.Sleep(1*time.Second), // Dá um tempo para o modal fechar
+		chromedp.Sleep(1*time.Second),
 		chromedp.WaitNotPresent(`div.p-custom_status_modal`),
 	)
 
@@ -524,7 +571,6 @@ func (s *SessaoSlack) LimparStatus() error {
 		return fmt.Errorf("erro ao confirmar limpeza do status: %w", err)
 	}
 
-	// Verifica se o status foi realmente limpo
 	statusAtual, err := s.ObterStatusAtual()
 	if err != nil {
 		return fmt.Errorf("erro ao verificar status após limpeza: %w", err)
@@ -537,24 +583,20 @@ func (s *SessaoSlack) LimparStatus() error {
 	return nil
 }
 
-// ObterStatusAtual obtém o status atual do usuário no Slack
 func (s *SessaoSlack) ObterStatusAtual() (*Status, error) {
 	ctx, cancelar := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancelar()
 
-	// Primeiro valida a sessão
 	if err := s.validarSessaoSomente(); err != nil {
 		return nil, fmt.Errorf("erro ao validar sessão: %w", err)
 	}
 
-	// Limpa o estado inicial
 	if err := s.limparEstadoInicial(ctx); err != nil {
 		return nil, fmt.Errorf("erro ao limpar estado inicial: %w", err)
 	}
 
 	var status *Status
 	err := s.tentarNovamente(func() error {
-		// Abre o menu de status
 		if err := chromedp.Run(ctx,
 			chromedp.Click(`button[data-qa="user-button"]`),
 			chromedp.WaitVisible(`button[data-qa="main-menu-custom-status-item"]`),
@@ -564,7 +606,6 @@ func (s *SessaoSlack) ObterStatusAtual() (*Status, error) {
 			return fmt.Errorf("erro ao abrir menu de status: %w", err)
 		}
 
-		// Obtém o status atual
 		type resultadoStatus struct {
 			TemStatus bool   `json:"hasStatus"`
 			Emoji     string `json:"emoji"`
@@ -574,25 +615,20 @@ func (s *SessaoSlack) ObterStatusAtual() (*Status, error) {
 
 		err := chromedp.Run(ctx, chromedp.Evaluate(`
 			(() => {
-				// Função para extrair texto limpo
 				function extractCleanText(element) {
 					if (!element) return '';
-					// Remove espaços extras e quebras de linha
 					return element.textContent.replace(/\s+/g, ' ').trim();
 				}
 
-				// Busca o texto do status
 				const statusInput = document.querySelector('div[data-qa="custom_status_input_body"]');
 				const statusText = statusInput ? statusInput.querySelector('.ql-editor p') : null;
 				const message = extractCleanText(statusText);
 
-				// Busca o emoji
 				const emojiImg = document.querySelector('.p_custom_status_modal__input_emoji_picker img.c-emoji');
 				if (!emojiImg || !message) {
 					return { hasStatus: false };
 				}
 
-				// Extrai o código do emoji
 				const emojiAlt = emojiImg.alt || '';
 				const emoji = emojiAlt.replace(/:/g, '');
 
@@ -608,7 +644,6 @@ func (s *SessaoSlack) ObterStatusAtual() (*Status, error) {
 			return fmt.Errorf("erro ao obter status: %w", err)
 		}
 
-		// Fecha o modal
 		if err := chromedp.Run(ctx,
 			chromedp.Click(`button[data-qa="sk_close_modal_button"]`),
 		); err != nil {

@@ -44,7 +44,7 @@ export default function StatusDetails() {
     }
 
     return (
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-center gap-2">
             <div className="flex items-center justify-center w-8 h-8 rounded-full bg-accent/10">
                 {currentStatus ? (
                     <div className="flex items-center justify-center">

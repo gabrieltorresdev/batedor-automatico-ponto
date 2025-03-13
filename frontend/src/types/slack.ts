@@ -1,5 +1,5 @@
 export interface SlackStatus {
-    Emoji: string; // Pode ser um emoji unicode ou uma URL de imagem
+    Emoji: string;
     Mensagem: string;
 }
 
@@ -13,6 +13,5 @@ export interface Status {
     text: string;
 }
 
-// Types for message operations
 export type TipoMensagem = 'entrada' | 'refeicao' | 'saida';
 export type TipoOperacao = 'entrada' | 'almoco' | 'saida';

@@ -81,7 +81,6 @@ export default function SlackMessageView() {
 
     return (
         <div className="flex flex-col gap-4">
-            {/* Seleção de Tipo */}
             <div className="space-y-2">
                 <div className="flex items-center gap-2">
                     <MessageSquare className="h-4 w-4 text-muted-foreground" />
@@ -101,7 +100,6 @@ export default function SlackMessageView() {
                 </div>
             </div>
 
-            {/* Mensagens Predefinidas */}
             {selectedType && (
                 <div className="space-y-2">
                     <div className="flex items-center gap-2">
@@ -120,7 +118,6 @@ export default function SlackMessageView() {
                 </div>
             )}
 
-            {/* Diálogo de confirmação */}
             <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
@@ -141,4 +138,4 @@ export default function SlackMessageView() {
             </AlertDialog>
         </div>
     );
-} 
+}

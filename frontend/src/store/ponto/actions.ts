@@ -1,24 +1,21 @@
 import { ObterLocalizacaoAtual, ObterLocalizacoesDisponiveis, SelecionarLocalizacao, ObterOperacoesDisponiveis, ExecutarOperacao } from '../../../wailsjs/go/main/App';
 import { withRuntime } from '@/lib/wailsRuntime';
-import { initializationQueue } from '@/lib/initializationQueue';
+import { pontoQueue } from '@/lib/initializationQueue';
 import { PontoState, PontoError, Localizacao, TipoOperacao, PONTO_TASK_KEYS } from './types';
 import { determineErrorType, extractErrorMessage } from './utils';
 
-// Mapping for operation types to indices
 const operacaoIndiceMap: Record<TipoOperacao, number> = {
   'entrada': 0,
   'almoco': 1,
   'saida': 2
 };
 
-// Mapping for display names
 const operacaoDisplayMap: Record<TipoOperacao, string> = {
   'entrada': 'Entrada',
   'almoco': 'Saída Refeição/Descanso',
   'saida': 'Saída'
 };
 
-// Normalize operation to standard type
 export const normalizarOperacao = (operacao: string | number): TipoOperacao => {
   if (typeof operacao === 'number') {
     switch (operacao) {
@@ -31,7 +28,6 @@ export const normalizarOperacao = (operacao: string | number): TipoOperacao => {
 
   const operacaoLower = operacao.toString().toLowerCase().trim();
   
-  // Map common variations to standard types
   if (operacaoLower === 'entrada' || operacaoLower === '0') return 'entrada';
   if (operacaoLower === 'almoco' || operacaoLower === 'saída refeição/descanso' || 
       operacaoLower === 'saida refeicao/descanso' || operacaoLower === '1') return 'almoco';
@@ -40,7 +36,6 @@ export const normalizarOperacao = (operacao: string | number): TipoOperacao => {
   throw new Error(`Operação inválida: ${operacao}`);
 };
 
-// Get display name for operation
 export const getOperacaoDisplay = (operacao: TipoOperacao | string | number): string => {
   const normalizedOp = typeof operacao === 'string' && 
     (operacao === 'entrada' || operacao === 'almoco' || operacao === 'saida') 
@@ -50,9 +45,6 @@ export const getOperacaoDisplay = (operacao: TipoOperacao | string | number): st
   return operacaoDisplayMap[normalizedOp];
 };
 
-/**
- * Initialize the ponto module
- */
 export const initialize = async (
   set: (state: Partial<PontoState>) => void,
   get: () => PontoState
@@ -60,29 +52,25 @@ export const initialize = async (
   const state = get();
   if (state.isInitialized || state.isLoading) return;
 
-  return initializationQueue.enqueue(async () => {
+  return pontoQueue.enqueue(async () => {
     try {
       set({ isLoading: true, error: null });
       
-      // Load current location
       const localizacaoAtual = await withRuntime<string>(
         () => ObterLocalizacaoAtual(),
         ''
       );
       
-      // Load available locations
       const localizacoesDisponiveis = await withRuntime<Localizacao[]>(
         () => ObterLocalizacoesDisponiveis(),
         []
       );
       
-      // Load available operations
       const operacoesRaw = await withRuntime<Array<string | number>>(
         () => ObterOperacoesDisponiveis(),
         []
       );
       
-      // Normalize operations
       const operacoesDisponiveis = [...new Set(operacoesRaw)]
         .map(op => {
           try {
@@ -116,20 +104,18 @@ export const initialize = async (
   }, PONTO_TASK_KEYS.INITIALIZATION);
 };
 
-/**
- * Get current location
- */
 export const obterLocalizacaoAtual = async (
   set: (state: Partial<PontoState>) => void,
   get: () => PontoState
 ): Promise<string> => {
   const state = get();
-  if (state.isLoading) return state.localizacaoAtual;
-
+  if (state.isLoading) return state.localizacaoAtual || '';
+  
   let result = '';
-  await initializationQueue.enqueue(async () => {
+  await pontoQueue.enqueue(async () => {
     try {
       set({ isLoading: true, error: null });
+      
       const localizacao = await withRuntime<string>(
         () => ObterLocalizacaoAtual(),
         ''
@@ -137,7 +123,8 @@ export const obterLocalizacaoAtual = async (
       
       set({ 
         localizacaoAtual: localizacao,
-        isLoading: false
+        isLoading: false,
+        error: null
       });
       
       result = localizacao;
@@ -156,34 +143,91 @@ export const obterLocalizacaoAtual = async (
   return result;
 };
 
-/**
- * Get available locations
- */
 export const obterLocalizacoesDisponiveis = async (
   set: (state: Partial<PontoState>) => void,
   get: () => PontoState
 ): Promise<Localizacao[]> => {
   const state = get();
-  if (state.isLoading) return state.localizacoesDisponiveis;
+  if (state.isLoading) {
+    console.log("Ponto: Já existe uma requisição em andamento para localizações, retornando dados em cache:", 
+                state.localizacoesDisponiveis?.length || 0);
+    return state.localizacoesDisponiveis;
+  }
   
+  if (state.localizacoesDisponiveis && state.localizacoesDisponiveis.length > 0) {
+    console.log("Ponto: Já temos localizações em cache, retornando:", state.localizacoesDisponiveis.length);
+    return state.localizacoesDisponiveis;
+  }
+
   let result: Localizacao[] = [];
-  await initializationQueue.enqueue(async () => {
+  await pontoQueue.enqueue(async () => {
     try {
+      console.log("Ponto: Buscando localizações disponíveis do backend");
       set({ isLoading: true, error: null });
+      
       const localizacoes = await withRuntime<Localizacao[]>(
         () => ObterLocalizacoesDisponiveis(),
         []
       );
       
-      set({ 
-        localizacoesDisponiveis: localizacoes,
-        isLoading: false
+      console.log("Ponto: Localizações recebidas do backend:", localizacoes);
+      
+      if (!localizacoes) {
+        console.warn("Ponto: ObterLocalizacoesDisponiveis retornou nulo ou undefined");
+        set({ 
+          localizacoesDisponiveis: [],
+          isLoading: false,
+          error: { 
+            type: 'network', 
+            message: 'Nenhuma localização disponível' 
+          }
+        });
+        result = [];
+        return;
+      }
+      
+      if (!Array.isArray(localizacoes)) {
+        console.warn("Ponto: ObterLocalizacoesDisponiveis retornou um não-array:", localizacoes);
+        set({ 
+          localizacoesDisponiveis: [],
+          isLoading: false,
+          error: { 
+            type: 'runtime', 
+            message: 'Formato de dados inválido para localizações' 
+          }
+        });
+        result = [];
+        return;
+      }
+      
+      const localizacoesValidas = localizacoes.filter(loc => {
+        if (!loc || typeof loc !== 'object') {
+          console.warn("Ponto: Localização inválida (não é objeto):", loc);
+          return false;
+        }
+        
+        if (!('Nome' in loc) || !('Valor' in loc)) {
+          console.warn("Ponto: Localização sem Nome ou Valor:", loc);
+          return false;
+        }
+        
+        return true;
       });
       
-      result = localizacoes;
+      console.log("Ponto: Localizações válidas:", localizacoesValidas.length);
+      
+      set({ 
+        localizacoesDisponiveis: localizacoesValidas,
+        isLoading: false,
+        error: null
+      });
+      
+      result = localizacoesValidas;
     } catch (error) {
       const type = determineErrorType(error);
       const message = extractErrorMessage(error);
+      
+      console.error("Ponto: Erro ao obter localizações disponíveis:", type, message, error);
       
       set({
         isLoading: false,
@@ -196,36 +240,29 @@ export const obterLocalizacoesDisponiveis = async (
   return result;
 };
 
-/**
- * Select a location
- */
 export const selecionarLocalizacao = async (
   localizacao: Localizacao,
   set: (state: Partial<PontoState>) => void,
   get: () => PontoState
 ): Promise<void> => {
-  return initializationQueue.enqueue(async () => {
+  return pontoQueue.enqueue(async () => {
     try {
       set({ isLoading: true, error: null });
       
-      // Select location
       await withRuntime(
         () => SelecionarLocalizacao(localizacao)
       );
       
-      // Update current location
       const novaLocalizacao = await withRuntime<string>(
         () => ObterLocalizacaoAtual(),
         ''
       );
       
-      // Update available operations
       const operacoesRaw = await withRuntime<Array<string | number>>(
         () => ObterOperacoesDisponiveis(),
         []
       );
       
-      // Normalize operations
       const operacoesDisponiveis = [...new Set(operacoesRaw)]
         .map(op => {
           try {
@@ -255,34 +292,82 @@ export const selecionarLocalizacao = async (
   }, PONTO_TASK_KEYS.LOCALIZACAO);
 };
 
-/**
- * Get available operations
- */
 export const obterOperacoesDisponiveis = async (
   set: (state: Partial<PontoState>) => void,
   get: () => PontoState
 ): Promise<TipoOperacao[]> => {
   const state = get();
-  if (state.isLoading) return state.operacoesDisponiveis;
+  if (state.isLoading) {
+    console.log("Ponto: Já existe uma requisição em andamento para operações, retornando dados em cache");
+    return state.operacoesDisponiveis;
+  }
   
   let result: TipoOperacao[] = [];
-  await initializationQueue.enqueue(async () => {
+  await pontoQueue.enqueue(async () => {
     try {
+      console.log("Ponto: Buscando operações disponíveis");
       set({ isLoading: true, error: null });
-      const operacoes = await withRuntime<TipoOperacao[]>(
+      
+      const operacoesRaw = await withRuntime<Array<string | number>>(
         () => ObterOperacoesDisponiveis(),
         []
       );
       
+      console.log("Ponto: Operações recebidas do backend:", operacoesRaw);
+      
+      if (!operacoesRaw) {
+        console.warn("Ponto: ObterOperacoesDisponiveis retornou nulo ou undefined");
+        set({ 
+          operacoesDisponiveis: [],
+          isLoading: false,
+          error: { 
+            type: 'runtime', 
+            message: 'Nenhuma operação disponível' 
+          }
+        });
+        result = [];
+        return;
+      }
+      
+      if (!Array.isArray(operacoesRaw)) {
+        console.warn("Ponto: ObterOperacoesDisponiveis retornou um não-array:", operacoesRaw);
+        set({ 
+          operacoesDisponiveis: [],
+          isLoading: false,
+          error: { 
+            type: 'runtime', 
+            message: 'Formato de dados inválido para operações' 
+          }
+        });
+        result = [];
+        return;
+      }
+      
+      const operacoes = [...new Set(operacoesRaw)]
+        .map(op => {
+          try {
+            return normalizarOperacao(op);
+          } catch (error) {
+            console.warn('Ponto: Operação inválida ignorada:', op, error);
+            return null;
+          }
+        })
+        .filter((op): op is TipoOperacao => op !== null);
+      
+      console.log("Ponto: Operações normalizadas:", operacoes);
+      
       set({ 
         operacoesDisponiveis: operacoes,
-        isLoading: false
+        isLoading: false,
+        error: null
       });
       
       result = operacoes;
     } catch (error) {
       const type = determineErrorType(error);
       const message = extractErrorMessage(error);
+      
+      console.error("Ponto: Erro ao obter operações disponíveis:", type, message, error);
       
       set({
         isLoading: false,
@@ -295,37 +380,71 @@ export const obterOperacoesDisponiveis = async (
   return result;
 };
 
-/**
- * Execute an operation
- */
 export const executarOperacao = async (
   operacao: TipoOperacao | string | number,
   set: (state: Partial<PontoState>) => void,
   get: () => PontoState
 ): Promise<void> => {
-  return initializationQueue.enqueue(async () => {
+  return pontoQueue.enqueue(async () => {
     try {
       set({ isLoading: true, error: null });
       
-      // Normalize operation
       const operacaoNormalizada = typeof operacao === 'string' && 
         (operacao === 'entrada' || operacao === 'almoco' || operacao === 'saida') 
         ? operacao as TipoOperacao 
         : normalizarOperacao(operacao);
       
-      // Get operation index
       const operacaoIndice = operacaoIndiceMap[operacaoNormalizada];
       
-      // Execute operation
+      console.log(`Ponto: Executando operação ${operacaoNormalizada} (${operacaoIndice})`);
       await withRuntime(
         () => ExecutarOperacao(operacaoIndice)
       );
       
-      set({ isLoading: false });
+      console.log('Ponto: Operação executada com sucesso, atualizando operações');
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      try {
+        console.log('Ponto: Buscando operações atualizadas após execução');
+        const novasOperacoes = await withRuntime<Array<string | number>>(
+          () => ObterOperacoesDisponiveis(),
+          []
+        );
+        
+        console.log('Ponto: Operações recebidas após execução:', novasOperacoes);
+        
+        if (!novasOperacoes || !Array.isArray(novasOperacoes)) {
+          console.warn('Ponto: Dados de operações inválidos após execução:', novasOperacoes);
+          set({ isLoading: false });
+          return;
+        }
+        
+        const operacoesAtualizadas = [...new Set(novasOperacoes)]
+          .map(op => {
+            try {
+              return normalizarOperacao(op);
+            } catch (error) {
+              console.warn('Ponto: Operação inválida ignorada:', op);
+              return null;
+            }
+          })
+          .filter((op): op is TipoOperacao => op !== null);
+        
+        console.log('Ponto: Novas operações disponíveis após execução:', operacoesAtualizadas);
+        set({ 
+          operacoesDisponiveis: operacoesAtualizadas,
+          isLoading: false 
+        });
+      } catch (error) {
+        console.error('Ponto: Erro ao atualizar operações após execução:', error);
+        set({ isLoading: false });
+      }
     } catch (error) {
       const type = determineErrorType(error);
       const message = extractErrorMessage(error);
       
+      console.error(`Ponto: Erro ao executar operação ${String(operacao)}:`, message);
       set({
         isLoading: false,
         error: { type, message }

@@ -24,7 +24,7 @@ export default function StatusCard({
 }: StatusCardProps) {
   return (
     <div className={cn(
-      "flex items-center transition-all duration-200 rounded-md shadow-none h-10 px-2",
+      "flex items-center transition-all duration-200 rounded-md shadow-none h-12 px-2",
       variant === "warning" && "bg-yellow-500/5",
       variant === "error" && "bg-red-500/5",
       variant === "success" && "bg-green-500/5",
@@ -46,7 +46,7 @@ export default function StatusCard({
         <div className="flex-1 flex justify-between items-center" >
           <div className="flex flex-col">
             <h3 className={cn(
-              "text-xs font-medium text-start",
+              "text-xs font-medium text-start line-clamp-2",
               variant === "warning" && "text-yellow-500",
               variant === "error" && "text-red-500",
               variant === "success" && "text-green-500"

@@ -1,19 +1,15 @@
 import { LoginPonto, VerificarCredenciaisSalvas, CarregarCredenciais } from '../../../wailsjs/go/main/App';
 import { withRuntime } from '@/lib/wailsRuntime';
-import { initializationQueue } from '@/lib/initializationQueue';
+import { authQueue } from '@/lib/initializationQueue';
 import { AuthState, AuthError, SavedCredentials, Credentials } from './types';
 import { determineErrorType, extractErrorMessage } from './utils';
 
-// Define task keys as constants for consistency
 export const AUTH_TASK_KEYS = {
   INITIALIZATION: 'auth-initialization',
   VERIFICATION: 'auth-verification',
   LOGIN: 'auth-login'
 };
 
-/**
- * Initializes the authentication module by loading saved credentials
- */
 export const initialize = async (
   set: (state: Partial<AuthState>) => void,
   get: () => AuthState
@@ -21,7 +17,7 @@ export const initialize = async (
   const state = get();
   if (state.isInitialized || state.isLoading) return;
 
-  return initializationQueue.enqueue(async () => {
+  return authQueue.enqueue(async () => {
     try {
       set({ isLoading: true, error: null });
       
@@ -57,14 +53,11 @@ export const initialize = async (
   }, AUTH_TASK_KEYS.INITIALIZATION);
 };
 
-/**
- * Verifies saved credentials with the backend
- */
 export const verifyCredentials = async (
   set: (state: Partial<AuthState>) => void,
   get: () => AuthState
 ): Promise<void> => {
-  return initializationQueue.enqueue(async () => {
+  return authQueue.enqueue(async () => {
     try {
       set({ isLoading: true, error: null });
       await withRuntime(() => VerificarCredenciaisSalvas());
@@ -83,9 +76,6 @@ export const verifyCredentials = async (
   }, AUTH_TASK_KEYS.VERIFICATION);
 };
 
-/**
- * Logs in with the provided credentials
- */
 export const login = async (
   username: string,
   password: string,
@@ -95,7 +85,7 @@ export const login = async (
   const state = get();
   if (state.isLoading) return;
 
-  return initializationQueue.enqueue(async () => {
+  return authQueue.enqueue(async () => {
     try {
       set({ isLoading: true, error: null });
       await withRuntime(() => LoginPonto(username, password));
@@ -123,9 +113,6 @@ export const login = async (
   }, AUTH_TASK_KEYS.LOGIN);
 };
 
-/**
- * Logs out the current user
- */
 export const logout = async (
   set: (state: Partial<AuthState>) => void
 ): Promise<void> => {
@@ -135,4 +122,4 @@ export const logout = async (
     isLoading: false,
     error: null
   });
-}; 
+};

@@ -1,34 +1,34 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Slack, AlertCircle, InfoIcon, Settings, ExternalLink, RefreshCw } from "lucide-react";
+import { Slack, AlertCircle, InfoIcon, ExternalLink, RefreshCw } from "lucide-react";
 
-import { useMainMenu } from "@/hooks/useMainMenu";
-import { useSlackManager } from "@/hooks/useSlackManager";
-import { useNotifyStore } from "@/store/notifyStore";
-import { useAuthManager } from "@/hooks/useAuthManager";
-import { withRuntime } from "@/lib/wailsRuntime";
-import { VerificarCredenciaisSalvas } from "../../wailsjs/go/main/App";
-import { RetryStatus } from "@/lib/initializationQueue";
+import { useMainMenu } from "../hooks/useMainMenu";
+import { useSlackManager } from "../hooks/useSlackManager";
+import { useNotifyStore } from "../store/notifyStore";
+import { useAuthManager } from "../hooks/useAuthManager";
+import { withRuntime } from "../lib/wailsRuntime";
+import { ConfigurarSlack } from "../../wailsjs/go/main/App";
+import { RetryStatus } from "../lib/initializationQueue";
+import { useWorkdayData } from '../hooks/useWorkdayData';
 
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import StatusCard from "@/components/StatusCard";
-import StatusDetails from "@/components/StatusDetails";
+import { Button } from "../components/ui/button";
+import { Skeleton } from "../components/ui/skeleton";
+import StatusCard from "../components/StatusCard";
+import StatusDetails from "../components/StatusDetails";
+import { DashboardFooter } from "../components/DashboardFooter";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
+} from "../components/ui/tooltip";
 
-import { MainMenuActionType } from "@/types/ponto";
-import { cn } from "@/lib/utils";
+import { MainMenuActionType } from "../types/ponto";
+import { cn } from "../lib/utils";
 
-// Helper function to map RetryStatus to StatusCard props format
 const mapRetryStatus = (status: RetryStatus | { isRetrying: boolean; retryAttempt: number; maxRetries: number; } | null | undefined) => {
   if (!status) return undefined;
   
-  // Check if it's the RetryStatus type from initializationQueue
   if ('attempt' in status && 'maxAttempts' in status) {
     return {
       isRetrying: status.isRetrying,
@@ -37,7 +37,6 @@ const mapRetryStatus = (status: RetryStatus | { isRetrying: boolean; retryAttemp
     };
   }
   
-  // Otherwise it's the object with retryAttempt/maxRetries properties
   return {
     isRetrying: status.isRetrying,
     attempt: status.retryAttempt,
@@ -45,13 +44,13 @@ const mapRetryStatus = (status: RetryStatus | { isRetrying: boolean; retryAttemp
   };
 };
 
-// Components
 const StatusCards = ({ 
   isPontoInitialized, 
   pontoError,
   isSlackInitialized,
   isSlackAuthenticated,
   isSlackLoading,
+  isAuthenticatingSlack,
   slackError,
   onRetrySlack,
   onLogin,
@@ -64,6 +63,7 @@ const StatusCards = ({
   isSlackInitialized: boolean;
   isSlackAuthenticated: boolean;
   isSlackLoading: boolean;
+  isAuthenticatingSlack: boolean;
   slackError: { type: string; message: string } | null;
   onRetrySlack: () => void;
   onLogin: () => void;
@@ -75,7 +75,7 @@ const StatusCards = ({
   const isLoading = !isPontoInitialized || !isSlackInitialized || isReinitializing;
   const isRetrying = authRetryStatus?.isRetrying || false;
 
-  if (!hasError && !isLoading && !isRetrying) {
+  if (!hasError && !isLoading && !isRetrying && !isAuthenticatingSlack) {
     return null;
   }
 
@@ -123,7 +123,7 @@ const StatusCards = ({
       {!isReinitializing && !isRetrying && pontoError && pontoError.type === 'blocked' && (
         <StatusCard 
           icon={<AlertCircle className="h-4 w-4" />}
-          title="Sistema Temporariamente Bloqueado"
+          title={`Erro do Ponto: ${pontoError.message}`}
           variant="error"
         >
           <div className="flex items-center justify-between">
@@ -189,7 +189,21 @@ const StatusCards = ({
         </StatusCard>
       )}
 
-      {isSlackInitialized && !isSlackAuthenticated && (
+      {isAuthenticatingSlack && (
+        <StatusCard 
+          icon={<Slack className="h-3 w-3 animate-pulse" />}
+          title="Autenticando Slack"
+          variant="default"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              Aguarde a janela do navegador para fazer login
+            </span>
+          </div>
+        </StatusCard>
+      )}
+
+      {isSlackInitialized && !isSlackAuthenticated && !isAuthenticatingSlack && (
         <StatusCard 
           icon={<InfoIcon className="h-3 w-3" />}
           title="Slack Desconectado"
@@ -226,13 +240,13 @@ const SlackStatus = ({ isAuthenticated }: { isAuthenticated: boolean }) => {
   
   return isAuthenticated && (
     <Button
-      variant="ghost"
-      className="w-full flex items-center justify-between gap-2 h-12 shadow-none !p-2"
+      variant="secondary"
+      className="w-full flex items-center justify-between gap-4 h-16 shadow-none !p-2"
       onClick={() => navigate('/slack/status')}
     >
       <StatusDetails />
       <div className=" p-1">
-        <Slack className="h-6 w-6 text-primary flex-shrink-0" />
+        <Slack className="h-6 w-6  flex-shrink-0" />
       </div>
     </Button>
   );
@@ -254,7 +268,7 @@ const ActionButton = ({
       onClick={onClick}
       disabled={isDisabled}
       className={cn(
-        "h-20 flex flex-col items-center justify-center gap-2",
+        "h-24 flex flex-col items-center justify-center gap-4",
         "bg-card"
       )}
       variant="ghost"
@@ -299,6 +313,7 @@ export default function Dashboard() {
   } = authManager;
   
   const [isReinitializing, setIsReinitializing] = useState(false);
+  const [isAuthenticatingSlack, setIsAuthenticatingSlack] = useState(false);
   
   const {
     actions,
@@ -314,9 +329,11 @@ export default function Dashboard() {
     error: slackError,
     verifySlackSession
   } = useSlackManager();
-
+  
   const authRetryStatus = mapRetryStatus(authManager.retryStatus.active || authManager.retryStatus.verification);
 
+  const workdayData = useWorkdayData();
+  
   useEffect(() => {
     let isMounted = true;
     let initializationPromise: Promise<void> | null = null;
@@ -324,13 +341,11 @@ export default function Dashboard() {
     const initializeModules = async () => {
       if (initializationPromise) return initializationPromise;
       
-      // Only initialize if not already initialized and not loading
       if ((!isPontoInitialized && !isAuthLoading) || (!isSlackInitialized && !isSlackLoading)) {
         initializationPromise = (async () => {
           try {
             if (!isPontoInitialized && !isAuthLoading) {
-              const success = await verifyCredentials();
-              // No need to navigate since we're already on the dashboard
+              await verifyCredentials();
             }
             
             if (!isSlackInitialized && !isSlackLoading && isMounted) {
@@ -352,103 +367,121 @@ export default function Dashboard() {
         return initializationPromise;
       }
     };
-
+    
     initializeModules();
     
     return () => {
       isMounted = false;
     };
   }, [isPontoInitialized, isSlackInitialized, verifyCredentials, verifySlackSession, refreshActions, addNotification, isAuthLoading, isSlackLoading]);
-
+  
   const handleRetrySlack = async () => {
     try {
+      setIsAuthenticatingSlack(true);
+      
+      await withRuntime(() => ConfigurarSlack());
+      
       await verifySlackSession();
       await refreshActions();
-      addNotification("Slack reconectado!", "success");
+      addNotification("Slack conectado com sucesso!", "success");
     } catch (error) {
+      console.debug('Erro ao conectar Slack:', error);
       if (error instanceof Error) {
-        const errorMessage = error.message.replace('erro ao fazer login: ', '');
-        addNotification(errorMessage, 'error');
+        addNotification(`Erro ao conectar: ${error.message}`, "error");
       } else {
-        addNotification("Erro ao conectar com Slack", "error");
+        addNotification("Erro ao conectar Slack", "error");
       }
+    } finally {
+      setIsAuthenticatingSlack(false);
     }
   };
-
+  
   const handleReinitializeAuth = async () => {
     try {
       setIsReinitializing(true);
       await reinitializeAuth();
       
-      // Refresh actions after successful reinitialization
       await refreshActions();
     } catch (error) {
       console.debug('Erro ao reinicializar autenticação:', error);
+      addNotification("Erro ao reinicializar autenticação", "error");
     } finally {
       setIsReinitializing(false);
     }
   };
-
+  
   const handleActionClick = async (type: MainMenuActionType) => {
     try {
+      if (!isPontoInitialized) {
+        addNotification("Sistema não inicializado", "warning");
+        return;
+      }
+      
       const route = await executeAction(type);
       if (route) navigate(route);
-    } catch (error) {
-      if (error instanceof Error) {
-        const errorMessage = error.message.replace('erro ao fazer login: ', '');
-        addNotification(errorMessage, 'error');
+      
+      if (['entrada', 'almoco', 'saida'].includes(type as string)) {
+        console.log(`Clock operation ${type} executed, refreshing timeline...`);
+        setTimeout(async () => {
+          try {
+            const { refreshTimeline } = await import('@/hooks/useTimeline');
+            refreshTimeline();
+          } catch (error) {
+            console.error('Error refreshing timeline:', error);
+          }
+        }, 1000);
       }
-      console.debug("Erro:", error);
+    } catch (error) {
+      console.debug('Erro ao executar ação:', error);
+      if (error instanceof Error) {
+        addNotification(`Erro: ${error.message}`, "error");
+      } else {
+        addNotification("Erro ao executar ação", "error");
+      }
     }
   };
-
+  
   const checkActionAvailability = (action: any) => {
-    // If the action is not available by its own definition, disable it
     if (!action.isAvailable) {
       return { isDisabled: true, tooltipText: undefined };
     }
 
-    // Disable ponto actions during reinitialization or auth loading
     if ((isReinitializing || isAuthLoading) && action.type.includes("ponto")) {
       return { isDisabled: true, tooltipText: "Reconectando ao sistema..." };
     }
 
-    // Check if modules are still initializing
     if (!isPontoInitialized && action.type.includes("ponto")) {
       return { isDisabled: true, tooltipText: "Módulo de ponto carregando..." };
     }
 
-    if (!isSlackInitialized && (action.type.includes("slack") || action.type === "ponto_slack")) {
+    if (!isSlackInitialized && action.type.includes("slack")) {
       return { isDisabled: true, tooltipText: "Módulo do Slack carregando..." };
     }
 
-    // Check for Ponto module errors - disable ponto actions if there are errors
     if (action.type.includes("ponto") && pontoError) {
       if (pontoError.type === 'blocked') {
-        return { isDisabled: true, tooltipText: "Sistema temporariamente bloqueado" };
-      } else {
-        return { isDisabled: true, tooltipText: "Sistema de ponto indisponível" };
+        return { isDisabled: true, tooltipText: `${pontoError.message}` };
       }
+      return { isDisabled: true, tooltipText: "Erro no módulo de ponto" };
     }
 
-    // Check for Slack module errors - disable slack actions if not authenticated or there are errors
     if ((action.type.includes("slack") || action.type === "ponto_slack") && 
         (!isSlackAuthenticated || slackError)) {
       return { isDisabled: true, tooltipText: "Slack indisponível" };
     }
 
-    // If all checks pass, the action is enabled
     return { isDisabled: false, tooltipText: undefined };
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-4">
       <StatusCards
         isPontoInitialized={isPontoInitialized}
         pontoError={pontoError}
         isSlackInitialized={isSlackInitialized}
         isSlackAuthenticated={isSlackAuthenticated}
         isSlackLoading={isSlackLoading}
+        isAuthenticatingSlack={isAuthenticatingSlack}
         slackError={slackError}
         onRetrySlack={handleRetrySlack}
         onLogin={() => navigate('/login-ponto')}
@@ -460,13 +493,13 @@ export default function Dashboard() {
       <SlackStatus isAuthenticated={isSlackAuthenticated} />
 
       {isMenuLoading ? (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-4">
           {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full rounded-lg" />
+            <Skeleton key={i} className="h-24 w-full rounded-lg" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-4">
           {actions.map((action) => {
             const { isDisabled, tooltipText } = checkActionAvailability(action);
             return (
@@ -481,7 +514,8 @@ export default function Dashboard() {
           })}
         </div>
       )}
+      
+      <DashboardFooter />
     </div>
   );
 }
-

@@ -16,13 +16,11 @@ interface NotifyStore {
     clearNotifications: () => void
 }
 
-// Limite máximo de notificações simultaneamente
 const MAX_NOTIFICATIONS = 3
 
 export const useNotifyStore = create<NotifyStore>((set) => ({
     notifications: [],
     addNotification: (message, severity) => set((state) => {
-        // Cria nova notificação
         const newNotification = {
             message,
             severity,
@@ -30,7 +28,6 @@ export const useNotifyStore = create<NotifyStore>((set) => ({
             timestamp: Date.now()
         };
         
-        // Adiciona a nova notificação e limita o máximo de notificações
         const updatedNotifications = [
             newNotification,
             ...state.notifications

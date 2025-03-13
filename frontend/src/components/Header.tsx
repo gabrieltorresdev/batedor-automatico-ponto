@@ -38,7 +38,6 @@ export default function Header() {
   const [isTyping, setIsTyping] = useState(true);
   const [isReloading, setIsReloading] = useState(false);
 
-  // Check if any auth task is retrying
   const isRetrying = retryStatus.isRetrying;
 
   const phrases = [
@@ -95,7 +94,6 @@ export default function Header() {
     navigate("/dashboard");
   };
 
-  // Função para limpar os estados de forma síncrona
   const resetStates = useCallback(() => {
     setAuthLoading(true);
     setSlackLoading(true);
@@ -109,24 +107,19 @@ export default function Header() {
     try {
       setIsReloading(true);
       
-      // Clear any pending tasks first
       initializationQueue.clear();
       
-      // Reset all states synchronously
       resetStates();
       
-      // Navigate to home and wait a bit for state updates
       if (location.pathname !== '/') {
         navigate("/");
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       
       try {
-        // Force a complete context refresh with proper error handling
         setAuthLoading(true);
         setSlackLoading(true);
         
-        // First verify credentials with timeout handling
         try {
           const success = await Promise.race([
             authManager.verifyCredentials(),
@@ -138,14 +131,12 @@ export default function Header() {
             )
           ]);
           
-          // If verification is successful and we're not on the dashboard, navigate there
           if (success && location.pathname !== '/dashboard') {
             navigate('/dashboard');
           }
         } catch (error: any) {
           console.debug('Error verifying credentials during reload:', error);
           
-          // Handle blocked user error specifically
           const errorMessage = error?.message?.toLowerCase() || '';
           if (errorMessage.includes('bloqueado') || errorMessage.includes('blocked')) {
             setUnauthenticated({
@@ -153,10 +144,8 @@ export default function Header() {
               message: 'Sistema temporariamente bloqueado. Tente novamente em alguns minutos.'
             });
           }
-          // Continue with Slack verification even if credentials fail
         }
         
-        // Then verify Slack with timeout handling
         try {
           await Promise.race([
             verifySlackSession(),
@@ -166,10 +155,8 @@ export default function Header() {
           ]);
         } catch (error) {
           console.debug('Error verifying Slack during reload:', error);
-          // Continue with actions refresh even if Slack fails
         }
         
-        // Finally refresh actions
         try {
           await Promise.race([
             refreshActions(),
@@ -184,13 +171,11 @@ export default function Header() {
         console.debug('Error during context refresh:', error);
       }
       
-      // Wait for runtime to be available before reloading
       try {
-        await new Promise(resolve => setTimeout(resolve, 500)); // Wait for runtime to stabilize
+        await new Promise(resolve => setTimeout(resolve, 500));
         if (window?.go?.main) {
           WindowReload();
         } else {
-          // If runtime is not available, do a regular page reload
           window.location.reload();
         }
       } catch (error) {

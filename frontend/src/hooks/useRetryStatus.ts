@@ -1,25 +1,42 @@
 import { useState, useEffect } from 'react';
-import { initializationQueue, RetryStatus } from '@/lib/initializationQueue';
+import { 
+  initializationQueue, 
+  authQueue, 
+  pontoQueue, 
+  slackQueue, 
+  RetryStatus,
+  InitializationQueue
+} from '@/lib/initializationQueue';
 
-/**
- * Hook to track retry status for a specific initialization task
- * @param key The key of the task to track
- * @returns The current retry status
- */
-export const useRetryStatus = (key: string) => {
+export type QueueType = 'default' | 'auth' | 'ponto' | 'slack';
+
+export const useRetryStatus = (key: string, queueType: QueueType = 'default') => {
+  const getQueue = (): InitializationQueue => {
+    switch (queueType) {
+      case 'auth':
+        return authQueue;
+      case 'ponto':
+        return pontoQueue;
+      case 'slack':
+        return slackQueue;
+      default:
+        return initializationQueue;
+    }
+  };
+
+  const queue = getQueue();
+  
   const [status, setStatus] = useState<RetryStatus | undefined>(
-    initializationQueue.getRetryStatus(key)
+    queue.getRetryStatus(key)
   );
 
   useEffect(() => {
-    // Add listener for retry status updates
-    const removeListener = initializationQueue.addRetryListener(key, (newStatus) => {
+    const removeListener = queue.addRetryListener(key, (newStatus) => {
       setStatus(newStatus);
     });
 
-    // Clean up listener on unmount
     return removeListener;
-  }, [key]);
+  }, [key, queue]);
 
   return status;
-}; 
+};

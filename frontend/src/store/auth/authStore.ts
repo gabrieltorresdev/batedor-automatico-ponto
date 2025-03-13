@@ -2,9 +2,6 @@ import { create } from 'zustand';
 import { AuthState } from './types';
 import * as actions from './actions';
 
-/**
- * Authentication store that manages user authentication state
- */
 export const useAuthStore = create<AuthState>((set, get) => ({
   username: null,
   lastKnownUsername: null,
@@ -12,20 +9,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading: false,
   error: null,
   
-  // Format display name from username
   formatDisplayName: (name: string) => {
     return name.split('@')[0].split('.').map(part => 
       part.charAt(0).toUpperCase() + part.slice(1)
     ).join(' ');
   },
 
-  // Authentication actions
   initialize: async () => actions.initialize(set, get),
   verifyCredentials: async () => actions.verifyCredentials(set, get),
   login: async (username, password) => actions.login(username, password, set, get),
   logout: async () => actions.logout(set),
   
-  // State setters
   setUnauthenticated: (error) => {
     set({
       username: null,
@@ -47,4 +41,4 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   clearError: () => {
     set(state => ({ ...state, error: null }));
   }
-})); 
+}));

@@ -6,6 +6,10 @@ export function CarregarCredenciais() {
   return window['go']['main']['App']['CarregarCredenciais']();
 }
 
+export function ConfigurarSlack() {
+  return window['go']['main']['App']['ConfigurarSlack']();
+}
+
 export function DefinirStatus(arg1) {
   return window['go']['main']['App']['DefinirStatus'](arg1);
 }
@@ -28,6 +32,10 @@ export function LimparStatus() {
 
 export function LoginPonto(arg1, arg2) {
   return window['go']['main']['App']['LoginPonto'](arg1, arg2);
+}
+
+export function ObterDadosTimeline() {
+  return window['go']['main']['App']['ObterDadosTimeline']();
 }
 
 export function ObterLocalizacaoAtual() {

@@ -4,7 +4,6 @@ import (
 	"github.com/gabrieltorresdev/batedor-automatico-ponto/internal/clockin"
 )
 
-// Status predefinidos
 var (
 	StatusTrabalhoPresencial = Status{
 		Emoji:    ":ot:",
@@ -32,7 +31,6 @@ var (
 	}
 )
 
-// DeterminarStatus determina o status com base no tipo de operação
 func DeterminarStatus(operacao clockin.TipoOperacao, localizacao string) Status {
 	switch operacao {
 	case clockin.Entrada:

@@ -13,7 +13,7 @@ export type RetryStatus = {
 
 type RetryListener = (status: RetryStatus) => void;
 
-class InitializationQueue {
+export class InitializationQueue {
   private queue: QueueTask[] = [];
   private isProcessing = false;
   private maxRetries = 3;
@@ -22,8 +22,16 @@ class InitializationQueue {
   private retryListeners: Map<string, RetryListener[]> = new Map();
   private retryStatus: Map<string, RetryStatus> = new Map();
   
+  constructor(options?: { maxRetries?: number; retryDelay?: number }) {
+    if (options?.maxRetries) {
+      this.maxRetries = options.maxRetries;
+    }
+    if (options?.retryDelay) {
+      this.retryDelay = options.retryDelay;
+    }
+  }
+  
   async enqueue(task: () => Promise<void>, key: string) {
-    // Se já existe uma tarefa com essa chave, não adiciona
     if (this.activeKeys.has(key)) {
       console.debug(`Task ${key} already in queue`);
       return;
@@ -32,7 +40,6 @@ class InitializationQueue {
     this.activeKeys.add(key);
     this.queue.push({ task, key, retries: 0 });
     
-    // Initialize retry status
     this.retryStatus.set(key, {
       key,
       attempt: 0,
@@ -54,7 +61,6 @@ class InitializationQueue {
     try {
       while (queueItem.retries < this.maxRetries) {
         try {
-          // Update retry status before attempt
           const status: RetryStatus = {
             key: queueItem.key,
             attempt: queueItem.retries,
@@ -66,11 +72,9 @@ class InitializationQueue {
           
           await queueItem.task();
           
-          // Sucesso: remove a tarefa da fila
           this.queue.shift();
           this.activeKeys.delete(queueItem.key);
           
-          // Clear retry status on success
           this.retryStatus.delete(queueItem.key);
           this.notifyListeners(queueItem.key, {
             key: queueItem.key,
@@ -85,11 +89,9 @@ class InitializationQueue {
           console.debug(`Task ${queueItem.key} failed, attempt ${queueItem.retries}/${this.maxRetries}:`, error);
           
           if (queueItem.retries === this.maxRetries) {
-            // Máximo de tentativas atingido: remove a tarefa
             this.queue.shift();
             this.activeKeys.delete(queueItem.key);
             
-            // Update retry status for max retries reached
             const finalStatus: RetryStatus = {
               key: queueItem.key,
               attempt: queueItem.retries,
@@ -101,7 +103,6 @@ class InitializationQueue {
             
             console.error(`Task ${queueItem.key} failed after ${this.maxRetries} attempts:`, error);
           } else {
-            // Update retry status for next attempt
             const retryStatus: RetryStatus = {
               key: queueItem.key,
               attempt: queueItem.retries,
@@ -111,7 +112,6 @@ class InitializationQueue {
             this.retryStatus.set(queueItem.key, retryStatus);
             this.notifyListeners(queueItem.key, retryStatus);
             
-            // Aguarda antes da próxima tentativa (exponential backoff)
             const delay = this.retryDelay * Math.pow(2, queueItem.retries - 1);
             await new Promise(resolve => setTimeout(resolve, delay));
           }
@@ -119,7 +119,6 @@ class InitializationQueue {
       }
     } finally {
       this.isProcessing = false;
-      // Processa próxima tarefa se houver
       if (this.queue.length > 0) {
         await this.process();
       }
@@ -127,7 +126,6 @@ class InitializationQueue {
   }
   
   clear() {
-    // Clear all retry statuses and notify listeners
     for (const [key, status] of this.retryStatus.entries()) {
       const clearedStatus: RetryStatus = {
         ...status,
@@ -142,7 +140,6 @@ class InitializationQueue {
     this.isProcessing = false;
   }
   
-  // Add a listener for retry status updates
   addRetryListener(key: string, listener: RetryListener): () => void {
     if (!this.retryListeners.has(key)) {
       this.retryListeners.set(key, []);
@@ -150,7 +147,6 @@ class InitializationQueue {
     
     this.retryListeners.get(key)!.push(listener);
     
-    // Return a function to remove the listener
     return () => {
       const listeners = this.retryListeners.get(key);
       if (listeners) {
@@ -166,7 +162,6 @@ class InitializationQueue {
     };
   }
   
-  // Get current retry status for a key
   getRetryStatus(key: string): RetryStatus | undefined {
     return this.retryStatus.get(key);
   }
@@ -179,5 +174,8 @@ class InitializationQueue {
   }
 }
 
-// Singleton instance
-export const initializationQueue = new InitializationQueue(); 
+export const authQueue = new InitializationQueue();
+export const pontoQueue = new InitializationQueue();
+export const slackQueue = new InitializationQueue();
+
+export const initializationQueue = new InitializationQueue();

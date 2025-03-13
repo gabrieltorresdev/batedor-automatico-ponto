@@ -1,6 +1,5 @@
 export type AuthErrorType = 'invalid_credentials' | 'network' | 'runtime' | 'blocked';
 
-// Import the RetryStatus type from the initialization queue
 import { RetryStatus } from '@/lib/initializationQueue';
 
 export interface AuthError {
@@ -18,7 +17,6 @@ export interface SavedCredentials {
   Password: string;
 }
 
-// Define the retry status for auth tasks
 export interface AuthRetryStatus {
   initialization: RetryStatus | { isRetrying: boolean; retryAttempt: number; maxRetries: number; };
   verification: RetryStatus | { isRetrying: boolean; retryAttempt: number; maxRetries: number; };
@@ -34,7 +32,6 @@ export interface AuthState {
   isLoading: boolean;
   error: AuthError | null;
   
-  // Methods
   formatDisplayName: (name: string) => string;
   initialize: () => Promise<void>;
   verifyCredentials: () => Promise<void>;
@@ -43,4 +40,4 @@ export interface AuthState {
   setUnauthenticated: (error?: AuthError) => void;
   setLoading: (loading: boolean) => void;
   clearError: () => void;
-} 
+}

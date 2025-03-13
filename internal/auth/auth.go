@@ -14,7 +14,7 @@ import (
 type LoginError struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
-	Cause   error  `json:"-"` // Omit cause from JSON
+	Cause   error  `json:"-"`
 }
 
 func (e *LoginError) Error() string {
@@ -24,7 +24,6 @@ func (e *LoginError) Error() string {
 	return e.Message
 }
 
-// MarshalJSON implements the json.Marshaler interface
 func (e *LoginError) MarshalJSON() ([]byte, error) {
 	type errorResponse struct {
 		Type    string `json:"type"`
@@ -36,7 +35,6 @@ func (e *LoginError) MarshalJSON() ([]byte, error) {
 		Message: e.Message,
 	}
 
-	// Use the standard json package to marshal the struct
 	return []byte(fmt.Sprintf(`{"type":"%s","message":"%s"}`, resp.Type, resp.Message)), nil
 }
 
@@ -81,7 +79,6 @@ type AuthSession struct {
 	cancel context.CancelFunc
 }
 
-// NewAuthSession creates a new authentication session
 func NewAuthSession(headless bool, ctx context.Context) BrowserSession {
 	if ctx == nil {
 		ctx = context.Background()
@@ -99,7 +96,6 @@ func NewAuthSession(headless bool, ctx context.Context) BrowserSession {
 		chromedp.Flag("ignore-certificate-errors", true),
 		chromedp.Flag("disable-extensions", true),
 		chromedp.WindowSize(browserWindowWidth, browserWindowHeight),
-		// chromedp.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 	)
 
 	allocCtx, _ := chromedp.NewExecAllocator(ctx, opts...)
@@ -122,7 +118,6 @@ func (a *AuthSession) Login(creds Credentials) error {
 		return err
 	}
 
-	// Primeiro passo: Navegar e aguardar a página carregar completamente
 	if err := a.executeLoginStep(loginStep{
 		actions: []chromedp.Action{
 			chromedp.Navigate(baseURL),
@@ -134,7 +129,6 @@ func (a *AuthSession) Login(creds Credentials) error {
 		return err
 	}
 
-	// Segundo passo: Preencher e submeter o formulário
 	if err := a.executeLoginStep(loginStep{
 		actions: []chromedp.Action{
 			chromedp.Focus(`input[id="username"]`),
@@ -149,12 +143,10 @@ func (a *AuthSession) Login(creds Credentials) error {
 		return err
 	}
 
-	// Aguarda um pouco para a página processar o login
 	if err := chromedp.Run(a.ctx, chromedp.Sleep(2*time.Second)); err != nil {
 		return err
 	}
 
-	// Terceiro passo: Verificar se há mensagem de erro
 	hasInvalidCredentials, err := a.checkForLoginErrors()
 	if err != nil {
 		return err
@@ -163,7 +155,6 @@ func (a *AuthSession) Login(creds Credentials) error {
 		return ErrInvalidCredentials
 	}
 
-	// Quarto passo: Aguardar carregamento da página principal
 	if err := a.executeLoginStep(loginStep{
 		actions: []chromedp.Action{
 			chromedp.WaitReady("body"),
@@ -171,7 +162,6 @@ func (a *AuthSession) Login(creds Credentials) error {
 		},
 		errMsg: "falha ao carregar a página após login",
 	}); err != nil {
-		// Verifica novamente se houve erro de credenciais
 		hasInvalidCredentials, checkErr := a.checkForLoginErrors()
 		if checkErr == nil && hasInvalidCredentials {
 			return ErrInvalidCredentials
@@ -202,14 +192,12 @@ func (a *AuthSession) executeLoginStep(step loginStep) error {
 }
 
 func (a *AuthSession) checkForLoginErrors() (bool, error) {
-	// Aguarda um pouco para a página recarregar e o alerta aparecer
 	var err error
 
 	var mensagemErro string
 	err = chromedp.Run(a.ctx,
 		chromedp.Evaluate(`
 			(function() {
-				// Verifica mensagens de erro em diferentes elementos possíveis
 				const seletores = [
 					'.ui-messages-error-detail',
 					'.ui-messages-error span',
@@ -226,7 +214,6 @@ func (a *AuthSession) checkForLoginErrors() (bool, error) {
 					}
 				}
 
-				// Verifica alertas do navegador
 				const alerts = document.querySelectorAll('[role="alert"]');
 				for (const alert of alerts) {
 					const texto = alert.textContent.trim();
@@ -245,7 +232,7 @@ func (a *AuthSession) checkForLoginErrors() (bool, error) {
 		}
 	}
 
-	// mensagemErro = "Você está fora do horário permitido"
+	mensagemErro = "Você está fora do horário permitido"
 
 	mensagemErroLower := strings.ToLower(mensagemErro)
 
@@ -258,7 +245,6 @@ func (a *AuthSession) checkForLoginErrors() (bool, error) {
 		}
 	}
 
-	// Verifica várias possíveis mensagens de erro de credenciais
 	mensagensErro := []string{
 		"acesso negado",
 		"credenciais inválidas",
@@ -275,7 +261,6 @@ func (a *AuthSession) checkForLoginErrors() (bool, error) {
 		}
 	}
 
-	// Se encontrou alguma mensagem de erro mas não é uma das conhecidas, loga para debug
 	if mensagemErro != "" {
 		log.Printf("Mensagem de erro encontrada: %s", mensagemErro)
 		return true, &LoginError{

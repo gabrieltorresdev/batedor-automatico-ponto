@@ -6,6 +6,8 @@ import {clockin} from '../models';
 
 export function CarregarCredenciais():Promise<main.Credentials>;
 
+export function ConfigurarSlack():Promise<void>;
+
 export function DefinirStatus(arg1:slack.Status):Promise<void>;
 
 export function DeletarCredenciais():Promise<void>;
@@ -17,6 +19,8 @@ export function ExecutarOperacao(arg1:clockin.TipoOperacao):Promise<void>;
 export function LimparStatus():Promise<void>;
 
 export function LoginPonto(arg1:string,arg2:string):Promise<void>;
+
+export function ObterDadosTimeline():Promise<Record<string, any>>;
 
 export function ObterLocalizacaoAtual():Promise<string>;
 

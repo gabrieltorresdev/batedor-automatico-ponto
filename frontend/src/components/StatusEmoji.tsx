@@ -1,15 +1,10 @@
 import React from 'react';
 import otLogo from '@/assets/images/ot.png';
 
-/**
- * Normalizes emoji string to display format
- */
 export const normalizeEmoji = (emoji: string): string => {
-    // If emoji is an image URL (starts with /)
     if (emoji.startsWith('/')) {
         return emoji;
     }
-    // If emoji starts with : and ends with :, extract the real emoji
     if (emoji.startsWith(':') && emoji.endsWith(':')) {
         const emojiMap: Record<string, string> = {
             ':cama:': '🛏️',
@@ -24,25 +19,29 @@ export const normalizeEmoji = (emoji: string): string => {
         };
         return emojiMap[emoji.toLowerCase()] || emoji;
     }
-    // If it's a unicode emoji
     return emoji;
 };
+
+type StatusEmojiSize = 'xs' | 'sm' | 'md' | 'lg';
 
 interface StatusEmojiProps {
     emoji: string;
     className?: string;
+    size?: StatusEmojiSize;
 }
 
-/**
- * Component to display status emoji, handling both image URLs and unicode emojis
- */
-export default function StatusEmoji({ emoji, className = '' }: StatusEmojiProps) {
+export default function StatusEmoji({ emoji, className = '', size = 'md' }: StatusEmojiProps) {
     const normalizedEmoji = normalizeEmoji(emoji);
     
-    // If emoji is an image URL
+    const sizeClasses = {
+        xs: 'w-3 h-3 text-xs',
+        sm: 'w-4 h-4 text-sm',
+        md: 'w-5 h-5 text-base',
+        lg: 'w-6 h-6 text-lg',
+    };
+    
     if (normalizedEmoji.startsWith('/')) {
-        return <img src={normalizedEmoji} alt="Status" className={`w-5 h-5 ${className}`} />;
+        return <img src={normalizedEmoji} alt="Status" className={`${sizeClasses[size]} ${className}`} />;
     }
-    // If it's a unicode emoji
-    return <span className={`text-base ${className}`}>{normalizedEmoji}</span>;
-} 
+    return <span className={`${sizeClasses[size]} ${className}`}>{normalizedEmoji}</span>;
+}

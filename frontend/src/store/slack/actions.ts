@@ -1,11 +1,10 @@
 import { ObterStatusAtual, DefinirStatus, LimparStatus, EnviarMensagem, VerificarSessaoSlack } from '../../../wailsjs/go/main/App';
 import { withRuntime } from '@/lib/wailsRuntime';
-import { initializationQueue } from '@/lib/initializationQueue';
+import { slackQueue } from '@/lib/initializationQueue';
 import { SlackState, Status, TipoMensagem, TipoOperacao, SLACK_TASK_KEYS, SlackStatus } from './types';
 import { determineErrorType, extractErrorMessage } from './utils';
 import otLogo from '@/assets/images/ot.png';
 
-// Predefined status constants
 export const StatusTrabalhoPresencial: Status = {
     emoji: otLogo,
     text: 'Trabalhando Presencialmente'
@@ -26,7 +25,6 @@ export const StatusFimExpediente: Status = {
     text: 'Fora do Expediente'
 };
 
-// Helper function to normalize location
 export const normalizeLocation = (location: string): string => {
     const loc = location.toUpperCase().trim();
     if (loc === 'HOME OFFICE' || loc.includes('HOME')) return 'HOME OFFICE';
@@ -34,9 +32,6 @@ export const normalizeLocation = (location: string): string => {
     return loc;
 };
 
-/**
- * Initializes the Slack module by verifying the session
- */
 export const initialize = async (
     set: (state: Partial<SlackState>) => void,
     get: () => SlackState
@@ -45,22 +40,16 @@ export const initialize = async (
     if (state.isInitialized || state.isLoading) return;
 
     try {
-        // First verify the session
         await verifySlackSession(set, get);
         
-        // Then fetch the current status if authenticated
         if (get().isAuthenticated) {
             await getCurrentStatus(set, get);
         }
     } catch (error) {
-        // If verification fails, the error is already handled in verifySlackSession
         console.debug('Error during Slack initialization:', error);
     }
 };
 
-/**
- * Verifies the Slack session with the backend
- */
 export const verifySlackSession = async (
     set: (state: Partial<SlackState>) => void,
     get: () => SlackState
@@ -68,7 +57,7 @@ export const verifySlackSession = async (
     const state = get();
     if (state.isLoading) return;
 
-    return initializationQueue.enqueue(async () => {
+    return slackQueue.enqueue(async () => {
         try {
             set({ isLoading: true, error: null });
             await withRuntime(() => VerificarSessaoSlack());
@@ -80,7 +69,6 @@ export const verifySlackSession = async (
                 error: null
             });
             
-            // After successful verification, try to get the current status
             try {
                 const status = await withRuntime<SlackStatus | null>(() => ObterStatusAtual(), null);
                 if (status) {
@@ -91,7 +79,6 @@ export const verifySlackSession = async (
                     set({ currentStatus: formattedStatus });
                 }
             } catch (statusError) {
-                // Just log the error but don't fail the verification
                 console.debug('Error fetching current status during verification:', statusError);
             }
         } catch (error) {
@@ -109,46 +96,61 @@ export const verifySlackSession = async (
     }, SLACK_TASK_KEYS.VERIFICATION);
 };
 
-/**
- * Gets the current Slack status
- */
 export const getCurrentStatus = async (
     set: (state: Partial<SlackState>) => void,
     get: () => SlackState
 ): Promise<Status | null> => {
-    try {
-        const status = await withRuntime<SlackStatus | null>(() => ObterStatusAtual(), null);
-        
-        if (!status) {
-            set({ currentStatus: null });
-            return null;
+    let resultStatus: Status | null = null;
+    
+    await slackQueue.enqueue(async () => {
+        try {
+            set({ isLoading: true, error: null });
+            
+            const status = await withRuntime<SlackStatus | null>(() => ObterStatusAtual(), null);
+            
+            if (!status) {
+                set({ 
+                    currentStatus: null,
+                    isLoading: false,
+                    error: null
+                });
+                resultStatus = null;
+                return;
+            }
+            
+            const formattedStatus: Status = {
+                emoji: status.Emoji,
+                text: status.Mensagem
+            };
+            
+            set({ 
+                currentStatus: formattedStatus,
+                isLoading: false,
+                error: null
+            });
+            
+            resultStatus = formattedStatus;
+        } catch (error) {
+            const type = determineErrorType(error);
+            const message = extractErrorMessage(error);
+            
+            set({ 
+                isLoading: false,
+                error: { type, message }
+            });
+            throw error;
         }
-        
-        const formattedStatus: Status = {
-            emoji: status.Emoji,
-            text: status.Mensagem
-        };
-        
-        set({ currentStatus: formattedStatus });
-        return formattedStatus;
-    } catch (error) {
-        const type = determineErrorType(error);
-        const message = extractErrorMessage(error);
-        
-        set({ error: { type, message } });
-        throw error;
-    }
+    }, SLACK_TASK_KEYS.STATUS);
+    
+    return resultStatus;
 };
 
-/**
- * Sets a new Slack status
- */
 export const setStatus = async (
     status: Status,
     set: (state: Partial<SlackState>) => void,
     get: () => SlackState
 ): Promise<void> => {
-    return initializationQueue.enqueue(async () => {
+    return slackQueue.enqueue(async () => {
         try {
             set({ isLoading: true, error: null });
             
@@ -175,14 +177,11 @@ export const setStatus = async (
     }, SLACK_TASK_KEYS.STATUS);
 };
 
-/**
- * Clears the current Slack status
- */
 export const clearStatus = async (
     set: (state: Partial<SlackState>) => void,
     get: () => SlackState
 ): Promise<void> => {
-    return initializationQueue.enqueue(async () => {
+    return slackQueue.enqueue(async () => {
         try {
             set({ isLoading: true, error: null });
             
@@ -206,15 +205,12 @@ export const clearStatus = async (
     }, SLACK_TASK_KEYS.STATUS);
 };
 
-/**
- * Sends a message to Slack
- */
 export const sendMessage = async (
     message: string,
     set: (state: Partial<SlackState>) => void,
     get: () => SlackState
 ): Promise<void> => {
-    return initializationQueue.enqueue(async () => {
+    return slackQueue.enqueue(async () => {
         try {
             set({ isLoading: true, error: null });
             
@@ -237,9 +233,6 @@ export const sendMessage = async (
     }, SLACK_TASK_KEYS.MESSAGE);
 };
 
-/**
- * Gets predefined status options
- */
 export const getStatusPresets = (): Status[] => {
     return [
         StatusHomeOffice,
@@ -249,9 +242,6 @@ export const getStatusPresets = (): Status[] => {
     ];
 };
 
-/**
- * Gets the default status based on operation and location
- */
 export const getDefaultStatus = (operation: TipoOperacao, location: string): Status => {
     const normalizedLocation = normalizeLocation(location);
     
@@ -267,9 +257,6 @@ export const getDefaultStatus = (operation: TipoOperacao, location: string): Sta
     }
 };
 
-/**
- * Gets default messages based on operation type
- */
 export const getDefaultMessages = (operation: TipoOperacao): string[] => {
     switch (operation) {
         case 'entrada':
@@ -283,9 +270,6 @@ export const getDefaultMessages = (operation: TipoOperacao): string[] => {
     }
 };
 
-/**
- * Gets preset messages by type
- */
 export const getPresetMessages = (type: TipoMensagem): string[] => {
     switch (type) {
         case 'entrada':
@@ -297,4 +281,4 @@ export const getPresetMessages = (type: TipoMensagem): string[] => {
         default:
             return [];
     }
-}; 
+};

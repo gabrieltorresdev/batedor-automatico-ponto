@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
-// GerenciadorOperacoes implementa a interface OperacoesSlack
 type GerenciadorOperacoes struct {
 	ctx         context.Context
 	pool        *SessionPool
@@ -15,7 +15,6 @@ type GerenciadorOperacoes struct {
 	statusCache *StatusCache
 }
 
-// NovoGerenciadorOperacoes cria uma nova instância de GerenciadorOperacoes
 func NovoGerenciadorOperacoes(ctx context.Context, config Configuracao) (*GerenciadorOperacoes, error) {
 	pool := NewSessionPool(config)
 
@@ -26,7 +25,6 @@ func NovoGerenciadorOperacoes(ctx context.Context, config Configuracao) (*Gerenc
 	}, nil
 }
 
-// getSessao obtém uma sessão do pool
 func (o *GerenciadorOperacoes) getSessao() (*SessaoSlack, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -44,7 +42,6 @@ func (o *GerenciadorOperacoes) getSessao() (*SessaoSlack, error) {
 	return sessao, nil
 }
 
-// releaseSessao libera a sessão atual de volta para o pool
 func (o *GerenciadorOperacoes) releaseSessao() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -55,7 +52,6 @@ func (o *GerenciadorOperacoes) releaseSessao() {
 	}
 }
 
-// OperacaoStatus executa uma operação de status com validação de sessão apropriada
 func (o *GerenciadorOperacoes) OperacaoStatus(operacao func(*SessaoSlack) error) error {
 	sessao, err := o.getSessao()
 	if err != nil {
@@ -70,7 +66,6 @@ func (o *GerenciadorOperacoes) OperacaoStatus(operacao func(*SessaoSlack) error)
 	return operacao(sessao)
 }
 
-// OperacaoMensagem executa uma operação de mensagem com validação de sessão apropriada
 func (o *GerenciadorOperacoes) OperacaoMensagem(operacao func(*SessaoSlack) error) error {
 	sessao, err := o.getSessao()
 	if err != nil {
@@ -85,14 +80,12 @@ func (o *GerenciadorOperacoes) OperacaoMensagem(operacao func(*SessaoSlack) erro
 	return operacao(sessao)
 }
 
-// DefinirStatus implementa a interface GerenciadorStatus
 func (o *GerenciadorOperacoes) DefinirStatus(status Status) error {
-	// Verifica se o status atual é igual ao desejado
 	currentStatus := o.statusCache.Get()
 	if currentStatus != nil &&
 		currentStatus.Emoji == status.Emoji &&
 		currentStatus.Mensagem == status.Mensagem {
-		return nil // Status já está como desejado
+		return nil
 	}
 
 	err := o.OperacaoStatus(func(s *SessaoSlack) error {
@@ -104,15 +97,13 @@ func (o *GerenciadorOperacoes) DefinirStatus(status Status) error {
 	})
 
 	if err != nil {
-		o.statusCache.Clear() // Limpa o cache em caso de erro
+		o.statusCache.Clear()
 	}
 
 	return err
 }
 
-// LimparStatus implementa a interface GerenciadorStatus
 func (o *GerenciadorOperacoes) LimparStatus() error {
-	// Se o cache indica que não há status, não precisa limpar
 	if o.statusCache.Get() == nil {
 		return nil
 	}
@@ -126,15 +117,13 @@ func (o *GerenciadorOperacoes) LimparStatus() error {
 	})
 
 	if err != nil {
-		o.statusCache.Clear() // Garante que o cache está limpo em caso de erro
+		o.statusCache.Clear()
 	}
 
 	return err
 }
 
-// ObterStatusAtual implementa a interface GerenciadorStatus
 func (o *GerenciadorOperacoes) ObterStatusAtual() (*Status, error) {
-	// Tenta obter do cache primeiro
 	if cachedStatus := o.statusCache.Get(); cachedStatus != nil {
 		return cachedStatus, nil
 	}
@@ -158,14 +147,12 @@ func (o *GerenciadorOperacoes) ObterStatusAtual() (*Status, error) {
 	return status, nil
 }
 
-// EnviarMensagem implementa a interface GerenciadorMensagem
 func (o *GerenciadorOperacoes) EnviarMensagem(msg string) error {
 	return o.OperacaoMensagem(func(s *SessaoSlack) error {
 		return s.EnviarMensagem(msg)
 	})
 }
 
-// ValidarSessao implementa a interface GerenciadorSessao
 func (o *GerenciadorOperacoes) ValidarSessao() error {
 	sessao, err := o.getSessao()
 	if err != nil {
@@ -176,7 +163,6 @@ func (o *GerenciadorOperacoes) ValidarSessao() error {
 	return sessao.ValidarSessao()
 }
 
-// SalvarCookies implementa a interface GerenciadorSessao
 func (o *GerenciadorOperacoes) SalvarCookies(diretorio string) error {
 	sessao, err := o.getSessao()
 	if err != nil {
@@ -187,7 +173,6 @@ func (o *GerenciadorOperacoes) SalvarCookies(diretorio string) error {
 	return sessao.SalvarCookies(diretorio)
 }
 
-// CarregarCookies implementa a interface GerenciadorSessao
 func (o *GerenciadorOperacoes) CarregarCookies(diretorio string) error {
 	sessao, err := o.getSessao()
 	if err != nil {
@@ -198,7 +183,6 @@ func (o *GerenciadorOperacoes) CarregarCookies(diretorio string) error {
 	return sessao.CarregarCookies(diretorio)
 }
 
-// Autenticar implementa a interface GerenciadorSessao
 func (o *GerenciadorOperacoes) Autenticar() error {
 	sessao, err := o.getSessao()
 	if err != nil {
@@ -209,12 +193,31 @@ func (o *GerenciadorOperacoes) Autenticar() error {
 	return sessao.Autenticar()
 }
 
-// Close implementa a interface GerenciadorSessao
 func (o *GerenciadorOperacoes) Close() {
 	o.mu.Lock()
-	defer o.mu.Unlock()
+	poolTemp := o.pool
+	o.pool = nil
+	o.mu.Unlock()
 
-	if o.pool != nil {
-		o.pool.Close()
+	if poolTemp != nil {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Printf("Pânico recuperado ao fechar pool de sessões: %v\n", r)
+				}
+			}()
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				poolTemp.Close()
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				fmt.Println("Timeout ao fechar pool de sessões do Slack")
+			}
+		}()
 	}
 }

@@ -289,7 +289,46 @@ func (g *GerenciadorPonto) selecionarLocalizacao(localizacao Localizacao) error 
 			}
 		}
 
-		return true, chromedp.Run(g.ctx, g.aguardarAjax())
+		if err := chromedp.Run(g.ctx, g.aguardarAjax()); err != nil {
+			return false, &ErroPonto{
+				Tipo:     "localizacao",
+				Mensagem: fmt.Sprintf("falha ao aguardar atualização após selecionar %s", localizacao.Nome),
+				Causa:    err,
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(g.ctx, 5*time.Second)
+		defer cancel()
+
+		var operacoesDisponiveis bool
+		err = chromedp.Run(ctx,
+			chromedp.Poll(`
+				(function() {
+					const botoes = Array.from(document.querySelectorAll('button'));
+					const tipos = ['Entrada', 'Saída refeição/descanso', 'Saída'];
+					
+					return tipos.some(tipo => {
+						const btn = botoes.find(b => 
+							b.textContent.includes(tipo) && 
+							!b.disabled && 
+							b.offsetParent !== null &&
+							window.getComputedStyle(b).display !== 'none'
+						);
+						return !!btn;
+					});
+				})()
+			`, &operacoesDisponiveis, chromedp.WithPollingTimeout(5*time.Second)),
+		)
+
+		if err != nil {
+			return false, &ErroPonto{
+				Tipo:     "localizacao",
+				Mensagem: fmt.Sprintf("timeout aguardando operações ficarem disponíveis após selecionar %s", localizacao.Nome),
+				Causa:    err,
+			}
+		}
+
+		return operacoesDisponiveis, nil
 	})
 
 	return err
@@ -309,7 +348,6 @@ func (g *GerenciadorPonto) obterOperacoesDisponiveis() ([]TipoOperacao, error) {
 					const botoes = Array.from(document.querySelectorAll('button'));
 					const tipos = ['Entrada', 'Saída refeição/descanso', 'Saída'];
 					
-					// Força a atualização do display dos botões
 					botoes.forEach(btn => {
 						if (btn.offsetParent !== null) {
 							btn.style.cssText = 'display:block !important; visibility:visible !important; opacity:1 !important';
@@ -438,7 +476,6 @@ func (g *GerenciadorPonto) tratarModalIntervalo() error {
 		return nil
 	}
 
-	// Retorna um erro específico para ser tratado pela interface
 	return &ErroPonto{
 		Tipo:     "intervalo_opcional",
 		Mensagem: modalInfo.Conteudo,
@@ -491,7 +528,6 @@ func (g *GerenciadorPonto) ExecutarOperacao(operacao TipoOperacao) error {
 	return g.executarOperacao(operacao)
 }
 
-// Close releases resources used by the module
 func (g *GerenciadorPonto) Close() {
 	if g.ctx != nil {
 		if cancel, ok := g.ctx.Value("cancel").(context.CancelFunc); ok {
